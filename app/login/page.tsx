@@ -274,7 +274,7 @@ function LoginContent() {
 // Modify the main export to wrap LoginContent with Suspense
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className=\"fixed inset-0 bg-gradient-to-br from-emerald-600 via-gray-900 to-black flex items-center justify-center\"><p className=\"text-white text-xl\">Loading login page...</p></div>}> {/* Added a more fitting fallback */}
+    <Suspense fallback={<div className="fixed inset-0 bg-gradient-to-br from-emerald-600 via-gray-900 to-black flex items-center justify-center"><p className="text-white text-xl">Loading login page...</p></div>}> {/* Added a more fitting fallback */}
       <LoginContent />
     </Suspense>
   );
