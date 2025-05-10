@@ -1,0 +1,16 @@
+fastapi>=0.97.0
+uvicorn>=0.22.0
+httpx>=0.24.1
+python-dotenv>=1.0.0
+pydantic>=1.10.9,<2.0.0 # Pin Pydantic < 2.0 for broader Langchain compatibility for now
+supabase>=1.0.3
+# Update Langchain and add Google GenAI
+langchain>=0.1.0 # Update to a more recent version
+langchain-google-genai>=0.0.5 # Add Google GenAI package
+openai>=0.27.8 # Keep if still needed for other parts or future use
+python-multipart>=0.0.6
+starlette>=0.27.0
+langchain-community # Add community package often needed
+langchain-core # Add core package often needed
+yfinance>=0.2.37 # For fetching stock prices
+requests>=2.31.0 # For making HTTP requests (e.g., to news APIs)
