@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createBrowserClient } from "@supabase/ssr";
@@ -21,7 +21,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-export default function LoginPage() {
+// Define the inner component that uses useSearchParams
+function LoginContent() {
   // ── state & Supabase setup ──
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -267,5 +268,14 @@ export default function LoginPage() {
         </div>
       </div>
     </>
+  );
+}
+
+// Modify the main export to wrap LoginContent with Suspense
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className=\"fixed inset-0 bg-gradient-to-br from-emerald-600 via-gray-900 to-black flex items-center justify-center\"><p className=\"text-white text-xl\">Loading login page...</p></div>}> {/* Added a more fitting fallback */}
+      <LoginContent />
+    </Suspense>
   );
 }
