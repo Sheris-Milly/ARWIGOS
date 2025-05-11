@@ -96,18 +96,18 @@ function LoginContent() {
   const features = [
     {
       Icon: LineChart,
-      title: "Real‑time Portfolio Insights",
-      desc: "Track performance, analyze trends & visualize investments with interactive dashboards.",
+      title: "Real‑time Wealth Insights",
+      desc: "Track performance with AI-enhanced analytics and interactive visualizations.",
     },
     {
       Icon: Shield,
-      title: "Curated Market Intelligence",
-      desc: "Access premium financial news, analyst reports & personalized stock alerts.",
+      title: "Intelligent Market Analysis",
+      desc: "Access AI-curated financial news and personalized investment opportunities.",
     },
     {
       Icon: MessageSquareText,
-      title: "AI‑Powered Advisory",
-      desc: "Receive advanced ML‑driven advice and portfolio optimization suggestions.",
+      title: "Goals-Oriented Strategy",
+      desc: "Receive tailored financial planning aligned with your personal objectives.",
     },
   ];
 
@@ -142,10 +142,13 @@ function LoginContent() {
               className="text-5xl xl:text-6xl font-bold text-white mb-5 leading-tight tracking-tight"
               variants={item}
             >
-              Unlock Financial Clarity
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-emerald-500">ARWIGOS</span>
             </motion.h1>
-            <motion.p className="text-lg text-emerald-100/80 mb-10" variants={item}>
-              Gain insights, track performance, and receive AI-driven advice.
+            <motion.p className="text-lg text-emerald-100/80 mb-3" variants={item}>
+              AI-powered Real-time Wealth Insights & Goals-Oriented Strategy
+            </motion.p>
+            <motion.p className="text-md text-emerald-100/70 mb-10" variants={item}>
+              Your intelligent financial companion for smarter investment decisions.
             </motion.p>
 
             <motion.div className="space-y-6" variants={item}>
@@ -189,15 +192,23 @@ function LoginContent() {
             </AnimatePresence>
 
             <div className="flex justify-center mb-4">
-              {/* Enhanced Lock Icon */}
-              <div className="p-4 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/30">
-                <Lock className="w-7 h-7 text-white" />
+              {/* Logo Icon */}
+              <div className="p-5 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/30">
+                <div className="relative">
+                  <LineChart className="w-8 h-8 text-white absolute opacity-70 -left-1 -top-1" />
+                  <Shield className="w-8 h-8 text-white absolute opacity-70 -right-1 -top-1" />
+                  <MessageSquareText className="w-8 h-8 text-white absolute opacity-70 top-3" />
+                  <div className="w-8 h-8 flex items-center justify-center">
+                    <span className="text-white font-bold text-xl">A</span>
+                  </div>
+                </div>
               </div>
             </div>
 
             <h2 className="text-3xl font-semibold text-center text-emerald-300">
-              Secure Access
+              Welcome Back
             </h2>
+            <p className="text-center text-emerald-100/70 -mt-1">Access your ARWIGOS dashboard</p>
 
             <form onSubmit={handleLogin} className="space-y-5">
               {/* Enhanced Input Fields */}

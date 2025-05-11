@@ -58,22 +58,22 @@ function SignupFormContent() {
     show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 200 } },
   };
 
-  // ── Feature list (copied from login) ──
+  // ── Feature list (updated for ARWIGOS) ──
   const features = [
     {
       Icon: LineChart,
-      title: "Real‑time Portfolio Insights",
-      desc: "Track performance, analyze trends & visualize investments with interactive dashboards.",
+      title: "Real‑time Wealth Insights",
+      desc: "Track performance with AI-enhanced analytics and interactive visualizations.",
     },
     {
       Icon: Shield,
-      title: "Curated Market Intelligence",
-      desc: "Access premium financial news, analyst reports & personalized stock alerts.",
+      title: "Intelligent Market Analysis",
+      desc: "Access AI-curated financial news and personalized investment opportunities.",
     },
     {
       Icon: MessageSquareText,
-      title: "AI‑Powered Advisory",
-      desc: "Receive advanced ML‑driven advice and portfolio optimization suggestions.",
+      title: "Goals-Oriented Strategy",
+      desc: "Receive tailored financial planning aligned with your personal objectives.",
     },
   ];
 
@@ -198,10 +198,13 @@ function SignupFormContent() {
               className="text-5xl xl:text-6xl font-bold text-white mb-5 leading-tight tracking-tight"
               variants={itemVariants}
             >
-              Start Your Financial Journey
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-emerald-500">ARWIGOS</span>
             </motion.h1>
-            <motion.p className="text-lg text-emerald-100/80 mb-10" variants={itemVariants}>
-              Join today to manage your finances smarter and achieve your goals.
+            <motion.p className="text-lg text-emerald-100/80 mb-3" variants={itemVariants}>
+              AI-powered Real-time Wealth Insights & Goals-Oriented Strategy
+            </motion.p>
+            <motion.p className="text-md text-emerald-100/70 mb-10" variants={itemVariants}>
+              Join our platform for intelligent financial guidance tailored to your goals.
             </motion.p>
 
             <motion.div className="space-y-6" variants={itemVariants}>
@@ -221,19 +224,27 @@ function SignupFormContent() {
 
           {/* Right: Glassy Signup Card (styled like login) */}
           <motion.div
-            className="w-full max-w-md bg-gray-900/70 backdrop-blur-xl border border-white/10 rounded-2xl p-8 sm:p-10 space-y-6 shadow-2xl shadow-black/30"
+            className="w-full max-w-2xl bg-gray-900/70 backdrop-blur-xl border border-white/10 rounded-2xl p-8 sm:p-10 space-y-6 shadow-2xl shadow-black/30"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1, transition: { duration: 0.5, ease: "easeOut" } }}
           >
             <div className="flex justify-center mb-4">
-              <div className="p-4 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/30">
-                <User className="w-7 h-7 text-white" /> {/* Changed icon to User */} 
+              <div className="p-5 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/30">
+                <div className="relative">
+                  <LineChart className="w-8 h-8 text-white absolute opacity-70 -left-1 -top-1" />
+                  <Shield className="w-8 h-8 text-white absolute opacity-70 -right-1 -top-1" />
+                  <MessageSquareText className="w-8 h-8 text-white absolute opacity-70 top-3" />
+                  <div className="w-8 h-8 flex items-center justify-center">
+                    <span className="text-white font-bold text-xl">A</span>
+                  </div>
+                </div>
               </div>
             </div>
 
             <h2 className="text-3xl font-semibold text-center text-emerald-300">
-              Create Your Account
+              Join ARWIGOS
             </h2>
+            <p className="text-center text-emerald-100/70 -mt-1">Your intelligent financial companion</p>
 
             <form onSubmit={handleSignup} className="space-y-5">
               {/* First and Last Name Inputs - Adjusted styling */}
@@ -338,7 +349,7 @@ function SignupFormContent() {
                     <p className="mt-2">You can get these keys from:</p>
                     <ul className="list-disc list-inside mt-1">
                       <li><a href="https://ai.google.dev/gemini-api/docs/api-key" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Google AI Studio</a> (Gemini API)</li>
-                      <li><a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">RapidAPI Marketplace</a></li>
+                      <li><a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Alpha Vantage</a></li>
                     </ul>
                     <p className="mt-2 text-emerald-300/90">Your keys are stored securely and used only for your account.</p>
                   </div>
