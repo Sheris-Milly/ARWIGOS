@@ -5,9 +5,9 @@ import { Toaster } from "sonner"
 import "./globals.css"
 
 export const metadata = {
-  title: "Finance Advisor",
+  title: "ArwiGos",
   description: "AI-powered financial analysis and advice",
-    generator: 'v0.dev'
+    generator: 'Sheris_Milly'
 }
 
 export default function RootLayout({
