@@ -39,12 +39,12 @@ router.post('/api-keys', authenticateUser, async (req, res) => {
   }
 
   try {
-    // Ensure the profiles table has columns: google_api_key and rapid_api_key
+    // Ensure the profiles table has columns: google_api_key and alpha_vantage_key
     const { data, error } = await supabase
       .from('profiles')
       .update({
         google_api_key: googleApiKey,
-        rapid_api_key: rapidApiKey,
+        alpha_vantage_key: rapidApiKey,
         updated_at: new Date(), // Optionally update timestamp
       })
       .eq('id', userId)
@@ -70,7 +70,7 @@ router.post('/api-keys', authenticateUser, async (req, res) => {
             .upsert({ 
                 id: userId, 
                 google_api_key: googleApiKey, 
-                rapid_api_key: rapidApiKey,
+                alpha_vantage_key: rapidApiKey,
                 // You might need to fetch other required profile fields if upserting a new row
                 // or ensure your table allows nulls for them / has defaults.
                 updated_at: new Date()

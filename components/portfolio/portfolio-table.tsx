@@ -37,7 +37,7 @@ export function PortfolioTable({ stocks, onRemove }: PortfolioTableProps) {
         </TableHeader>
         <TableBody>
           {stocks.map((stock) => (
-            <TableRow key={stock.symbol}>
+            <TableRow key={`${stock.portfolioId}-${stock.symbol}`}>
               <TableCell className="font-medium">{stock.symbol}</TableCell>
               <TableCell>{stock.name}</TableCell>
               <TableCell className="text-right">{stock.shares}</TableCell>

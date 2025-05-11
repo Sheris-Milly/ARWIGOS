@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // Define public paths that don't require authentication
 const publicPaths = ['/login', '/signup', '/auth/callback', '/reset-password', '/about', '/terms', '/privacy']; // Keep original public paths + auth callback
 // Define paths that require authentication
-const protectedPaths = ['/dashboard', '/portfolio', '/advisor', '/market', '/planning', '/profile'];
+const protectedPaths = ['/', '/dashboard', '/portfolio', '/advisor', '/market', '/planning', '/profile'];
 // Define paths that should always be allowed, regardless of authentication state
 const alwaysAllowedPaths = ['/auth/callback']; // Add the Supabase auth callback path
 

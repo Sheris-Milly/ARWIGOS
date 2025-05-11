@@ -30,8 +30,22 @@ const authenticateUser = async (req, res, next) => {
 // Get latest general financial news
 router.get('/latest', authenticateUser, async (req, res) => {
   const { limit = 20 } = req.query;
-  
+  const userId = req.user.id;
+
   try {
+    // Fetch user's RapidAPI key
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('alpha_vantage_key')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile || !profile.alpha_vantage_key) {
+      console.error('Error fetching Alpha Vantage API key or key not found for latest news:', profileError);
+      return res.status(403).json({ success: false, message: 'Alpha Vantage API key not configured for this user. Please add it in your profile.' });
+    }
+    const userRapidApiKey = profile.alpha_vantage_key;
+
     // Check cache first
     const { data: cachedNews, error: cacheError } = await supabase
       .from('latest_news')
@@ -57,7 +71,7 @@ router.get('/latest', authenticateUser, async (req, res) => {
         type: 'LATEST'
       },
       headers: {
-        'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+        'x-rapidapi-key': userRapidApiKey,
         'x-rapidapi-host': 'yahoo-finance15.p.rapidapi.com'
       }
     };
@@ -109,12 +123,26 @@ router.get('/latest', authenticateUser, async (req, res) => {
 router.get('/stock/:ticker', authenticateUser, async (req, res) => {
   const { ticker } = req.params;
   const { limit = 10 } = req.query;
-  
+  const userId = req.user.id;
+
   if (!ticker) {
     return res.status(400).json({ success: false, message: 'Stock ticker is required' });
   }
-  
+
   try {
+    // Fetch user's RapidAPI key
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('alpha_vantage_key')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile || !profile.alpha_vantage_key) {
+      console.error('Error fetching Alpha Vantage API key or key not found for stock news:', profileError);
+      return res.status(403).json({ success: false, message: 'Alpha Vantage API key not configured for this user. Please add it in your profile.' });
+    }
+    const userRapidApiKey = profile.alpha_vantage_key;
+
     // Check cache first
     const cacheKey = ticker.toUpperCase();
     const { data: cachedNews, error: cacheError } = await supabase
@@ -143,7 +171,7 @@ router.get('/stock/:ticker', authenticateUser, async (req, res) => {
         type: 'ALL'
       },
       headers: {
-        'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+        'x-rapidapi-key': userRapidApiKey,
         'x-rapidapi-host': 'yahoo-finance15.p.rapidapi.com'
       }
     };
@@ -195,8 +223,22 @@ router.get('/stock/:ticker', authenticateUser, async (req, res) => {
 // Get trending news
 router.get('/trending', authenticateUser, async (req, res) => {
   const { limit = 10 } = req.query;
-  
+  const userId = req.user.id;
+
   try {
+    // Fetch user's RapidAPI key
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('alpha_vantage_key')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile || !profile.alpha_vantage_key) {
+      console.error('Error fetching Alpha Vantage API key or key not found for trending news:', profileError);
+      return res.status(403).json({ success: false, message: 'Alpha Vantage API key not configured for this user. Please add it in your profile.' });
+    }
+    const userRapidApiKey = profile.alpha_vantage_key;
+
     // Check cache first
     const { data: cachedNews, error: cacheError } = await supabase
       .from('trending_news')
@@ -222,7 +264,7 @@ router.get('/trending', authenticateUser, async (req, res) => {
         type: 'TRENDING'
       },
       headers: {
-        'x-rapidapi-key': process.env.RAPIDAPI_KEY,
+        'x-rapidapi-key': userRapidApiKey,
         'x-rapidapi-host': 'yahoo-finance15.p.rapidapi.com'
       }
     };
@@ -356,4 +398,4 @@ router.delete('/bookmarks/:id', authenticateUser, async (req, res) => {
   }
 });
 
-export default router; 
+export default router;

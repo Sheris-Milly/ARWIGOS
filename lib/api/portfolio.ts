@@ -125,7 +125,7 @@ export async function addStockToPortfolio(
     // This replaces the manual check and insert logic
     const stockData = await fetchStockData(symbol);
 
-    if (!stockData || !stockData.symbol) {
+    if (!stockData || !stockData.quote || !stockData.quote.symbol) {
         // Handle case where fetchStockData failed to return valid data
         console.error(`Failed to get or create stock details for symbol: ${symbol}`);
         throw new Error(`Could not retrieve valid stock information for ${symbol}.`);
@@ -139,7 +139,7 @@ export async function addStockToPortfolio(
     const { data: existingStock, error: stockError } = await supabaseStock
       .from('stocks')
       .select('symbol')
-      .eq('symbol', stockData.symbol)
+      .eq('symbol', stockData.quote.symbol)
       .single();
     if (stockError && stockError.code !== 'PGRST116') { // PGRST116: No rows found
       console.error('Error checking stocks table:', stockError);
@@ -150,25 +150,30 @@ export async function addStockToPortfolio(
       const { error: insertError } = await supabaseStock
         .from('stocks')
         .insert({
-          symbol: stockData.symbol,
-          name: stockData.name || stockData.symbol,
-          sector: stockData.sector || null,
-          industry: stockData.industry || null,
-          price: stockData.currentPrice || 0,
-          updated_at: new Date().toISOString(),
+          symbol: stockData.quote.symbol,
+          name: stockData.quote.name || stockData.quote.symbol,
+          exchange: null,
+          sector: null, // Alpha Vantage doesn't provide sector info in the quote
+          industry: null, // Alpha Vantage doesn't provide industry info in the quote
+          last_price: stockData.quote.currentPrice || 0,
+          price_change: stockData.quote.change || 0,
+          price_change_percent: stockData.quote.changePercent || 0,
+          last_updated: new Date().toISOString()
         });
       if (insertError) {
         console.error('Error inserting stock into stocks table:', insertError);
         throw new Error('Failed to insert stock into stocks table.');
       }
     }
+    // No need to get stock ID since we use the symbol directly
+      
     // 2. Add the stock holding to the portfolio_stocks table
     const { data, error } = await supabase
       .from('portfolio_stocks')
       .insert({
         portfolio_id: portfolioId,
-        stock_symbol: stockData.symbol, // Use the symbol from fetched/updated stock data
-        shares,
+        stock_symbol: stockData.quote.symbol, // Use the symbol directly
+        shares: shares,
         average_price: purchasePrice, // Store the actual purchase price for this lot
         purchase_date: purchaseDate,
         created_at: new Date().toISOString(),
@@ -181,7 +186,7 @@ export async function addStockToPortfolio(
       console.error("Error adding stock to portfolio_stocks:", error);
       // Check for unique constraint violation (e.g., stock already exists in portfolio)
       if (error.code === '23505') { // Adjust code based on your DB error for unique constraints
-          throw new Error(`Stock ${stockData.symbol} already exists in this portfolio.`);
+          throw new Error(`Stock ${stockData.quote.symbol} already exists in this portfolio.`);
       }
       throw new Error(`Failed to add stock to portfolio: ${error.message}`);
     }
@@ -209,10 +214,10 @@ async function updatePortfolioValue(portfolioId: string) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
     
-    // Get all stock holdings in the portfolio
+    // Get all stock holdings in the portfolio with related stock details
     const { data: portfolioStocksData, error: portfolioStocksError } = await supabase
       .from('portfolio_stocks')
-      .select('stock_symbol, shares') // Select only necessary fields
+      .select('stock_symbol, shares, stock_details:stocks(*)') // Select necessary fields
       .eq('portfolio_id', portfolioId);
     
     if (portfolioStocksError) {
@@ -232,14 +237,8 @@ async function updatePortfolioValue(portfolioId: string) {
         })
         .eq('id', portfolioId);
 
-      // Optionally record zero value performance
-      await supabase
-        .from('portfolio_performance')
-        .insert({
-          portfolio_id: portfolioId,
-          value: 0,
-          date: new Date().toISOString()
-        });
+      // Portfolio performance tracking is not implemented in the current schema
+      console.log(`Portfolio ${portfolioId} is empty, value set to 0`);
       return; // Exit function after handling empty portfolio
     }
     
@@ -247,9 +246,9 @@ async function updatePortfolioValue(portfolioId: string) {
     const symbols = [...new Set(portfolioStocksData.map(ps => ps.stock_symbol))];
 
     // Fetch the latest price for these symbols from the 'stocks' table
-    const { data: stockDetailsData, error: stockDetailsError } = await supabase
+    const { data, error: stockDetailsError } = await supabase
         .from('stocks')
-        .select('symbol, last_price') // Assuming 'last_price' holds the current market price
+        .select('symbol, last_price') // Using last_price from the database schema
         .in('symbol', symbols);
 
     if (stockDetailsError) {
@@ -259,12 +258,14 @@ async function updatePortfolioValue(portfolioId: string) {
       throw new Error(`Failed to fetch stock details: ${stockDetailsError.message}`);
     }
 
-    if (!stockDetailsData) {
+    // Use data or an empty array if data is null
+    const stockDetailsData = data || [];
+    
+    if (stockDetailsData.length === 0) {
         console.warn(`Could not fetch stock details for symbols: ${symbols.join(', ')}`);
         // Handle case where stock details might be missing for some symbols
         // Maybe calculate value with available prices and log a warning?
         // For now, proceed, but value might be incomplete.
-        stockDetailsData = []; // Ensure it's an array
     }
 
     // Create a map for quick price lookup { symbol: last_price }
@@ -296,19 +297,9 @@ async function updatePortfolioValue(portfolioId: string) {
         throw new Error(`Failed to update portfolio value: ${updatePortfolioError.message}`);
     }
     
-    // Record portfolio performance snapshot
-    const { error: insertPerformanceError } = await supabase
-      .from('portfolio_performance')
-      .insert({
-        portfolio_id: portfolioId,
-        value: totalValue,
-        date: new Date().toISOString()
-      });
-
-    if (insertPerformanceError) {
-        console.error("Error inserting portfolio performance record:", insertPerformanceError);
-        // Log error but don't necessarily throw, as the main value update succeeded.
-    }
+    // Portfolio performance tracking is not implemented in the current schema
+    // We'll just log the current portfolio value for debugging purposes
+    console.log(`Updated portfolio ${portfolioId} value to ${totalValue}`);
     
   } catch (error) {
     // Log the caught error from any point in the try block
@@ -331,7 +322,7 @@ export async function removeStockFromPortfolio(portfolioId: string, stockSymbol:
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
     
-    // Delete the stock from the portfolio
+    // Delete the stock from the portfolio using the stock_symbol directly
     const { error } = await supabase
       .from('portfolio_stocks')
       .delete()
@@ -339,8 +330,8 @@ export async function removeStockFromPortfolio(portfolioId: string, stockSymbol:
       .eq('stock_symbol', stockSymbol);
     
     if (error) {
-      console.error("Error adding stock to portfolio_stocks:", error);
-      throw new Error(`Failed to add stock to portfolio: ${error.message}`);
+      console.error("Error removing stock from portfolio_stocks:", error);
+      throw new Error(`Failed to remove stock from portfolio: ${error.message}`);
     }
 
     // Update portfolio value

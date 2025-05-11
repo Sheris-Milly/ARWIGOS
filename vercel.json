@@ -2,6 +2,7 @@
   "version": 2,
   "buildCommand": "pnpm build",
   "outputDirectory": ".next",
+  "installCommand": "pnpm install",
   "routes": [
     {
       "src": "/api/(.*)",
@@ -14,5 +15,15 @@
   ],
   "env": {
     "NODE_ENV": "production"
-  }
-} 
+  },
+  "builds": [
+    {
+      "src": "backend/server.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ]
+}

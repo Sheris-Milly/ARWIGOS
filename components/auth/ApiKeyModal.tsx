@@ -18,18 +18,21 @@ import { useToast } from '@/components/ui/use-toast';
 interface ApiKeyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (googleApiKey: string, rapidApiKey: string) => Promise<void>;
+  onSave: (googleApiKey: string, alphaVantageKey: string) => Promise<void>;
+
   // userId is removed as it will be derived from the auth token on the backend
 }
 
 export function ApiKeyModal({ isOpen, onClose, onSave }: ApiKeyModalProps) {
   const [googleApiKey, setGoogleApiKey] = useState('');
-  const [rapidApiKey, setRapidApiKey] = useState('');
+  const [alphaVantageKey, setAlphaVantageKey] = useState('');
+
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
   const handleSubmit = async () => {
-    if (!googleApiKey.trim() || !rapidApiKey.trim()) {
+    if (!googleApiKey.trim() || !alphaVantageKey.trim()) {
+
       toast({
         title: 'Error',
         description: 'Please enter both API keys.',
@@ -39,7 +42,8 @@ export function ApiKeyModal({ isOpen, onClose, onSave }: ApiKeyModalProps) {
     }
     setIsLoading(true);
     try {
-      await onSave(googleApiKey, rapidApiKey);
+      await onSave(googleApiKey, alphaVantageKey);
+
       toast({
         title: 'Success',
         description: 'API keys saved successfully.',
@@ -64,8 +68,8 @@ export function ApiKeyModal({ isOpen, onClose, onSave }: ApiKeyModalProps) {
         <DialogHeader>
           <DialogTitle>Setup API Keys</DialogTitle>
           <DialogDescription>
-            Please enter your Google AI (Gemini) API Key and RapidAPI Key to use all features of the application.
-            These keys will be stored securely and associated with your account.
+          Please enter your Google AI (Gemini) API Key and Alpha Vantage API Key to use all features of the application.
+          These keys will be stored securely and associated with your account.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -82,15 +86,15 @@ export function ApiKeyModal({ isOpen, onClose, onSave }: ApiKeyModalProps) {
             />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="rapidApiKey" className="text-right col-span-1">
-              RapidAPI Key
+            <Label htmlFor="alphaVantageKey" className="text-right col-span-1">
+              Alpha Vantage API Key
             </Label>
             <Input
-              id="rapidApiKey"
-              value={rapidApiKey}
-              onChange={(e) => setRapidApiKey(e.target.value)}
+              id="alphaVantageKey"
+              value={alphaVantageKey}
+              onChange={(e) => setAlphaVantageKey(e.target.value)}
               className="col-span-3"
-              placeholder="Enter your RapidAPI Key"
+              placeholder="Enter your Alpha Vantage API Key"
             />
           </div>
         </div>

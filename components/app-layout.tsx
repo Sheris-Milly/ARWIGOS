@@ -17,21 +17,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setMounted(true)
   }, [])
 
-  // Completely rewritten theme toggle function
+  // Simplified theme toggle function
   const toggleTheme = () => {
-    // Use resolvedTheme instead of theme to get the actual current theme
-    const newTheme = resolvedTheme === "dark" ? "light" : "dark"
-    setTheme(newTheme)
-
-    // Apply theme class directly to document for immediate effect
-    if (newTheme === "dark") {
-      document.documentElement.classList.add("dark")
-    } else {
-      document.documentElement.classList.remove("dark")
-    }
-
-    // Store the theme preference in localStorage for persistence
-    localStorage.setItem("theme", newTheme)
+    setTheme(resolvedTheme === "dark" ? "light" : "dark")
   }
 
   return (

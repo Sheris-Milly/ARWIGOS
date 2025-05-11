@@ -28,11 +28,17 @@ interface Message {
 }
 
 interface EnhancedFinanceAgentProps {
-  // Props if needed, e.g., initial conversation ID
+  marketData?: any; // Market data for context
+  newsData?: any; // News data for context
+  isLoading?: boolean; // Loading state
 }
 
 // Agent visual config - Define outside the component
 const agentVisuals: Record<string, { icon: React.ReactNode; color: string; name: string }> = {
+  market_analyst: { icon: <BarChart3 className="h-4 w-4" />, color: "#10b981", name: "Market Analyst" },
+  portfolio_manager: { icon: <TrendingUp className="h-4 w-4" />, color: "#3b82f6", name: "Portfolio Manager" },
+  financial_advisor: { icon: <PiggyBank className="h-4 w-4" />, color: "#8b5cf6", name: "Financial Advisor" },
+  // Legacy agent types (keeping for backward compatibility)
   market_analysis: { icon: <BarChart3 className="h-4 w-4" />, color: "#10b981", name: "Market Analysis" },
   investment_advice: { icon: <TrendingUp className="h-4 w-4" />, color: "#3b82f6", name: "Investment Advice" },
   retirement_planning: { icon: <PiggyBank className="h-4 w-4" />, color: "#8b5cf6", name: "Retirement Planning" },
@@ -40,6 +46,7 @@ const agentVisuals: Record<string, { icon: React.ReactNode; color: string; name:
   general_query: { icon: <BrainCircuit className="h-4 w-4" />, color: "#ec4899", name: "General Query" },
   default: { icon: <HelpCircle className="h-4 w-4" />, color: "#6b7280", name: "AI Advisor" },
   error: { icon: <AlertCircle className="h-4 w-4" />, color: "#ef4444", name: "Error" },
+  loading: { icon: <Loader2 className="h-4 w-4 animate-spin" />, color: "#6b7280", name: "Loading" },
 };
 
 // Helper function to get agent visual config
@@ -57,7 +64,7 @@ const questionCategories = [
   { name: "General Finance", icon: BrainCircuit, questions: ["Explain compound interest.", "What is a mutual fund?", "How does inflation affect savings?"] },
 ];
 
-export function EnhancedFinanceAgent({}: EnhancedFinanceAgentProps) {
+export function EnhancedFinanceAgent({ marketData, newsData, isLoading: externalLoading }: EnhancedFinanceAgentProps): React.ReactNode {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -87,12 +94,71 @@ export function EnhancedFinanceAgent({}: EnhancedFinanceAgentProps) {
     setHistoryLoading(true);
     setError(null);
     try {
-      // TODO: Replace with actual token retrieval logic
-      const token = localStorage.getItem('supabase.auth.token'); // Example
-      if (!token) throw new Error("Authentication token not found.");
+      // Get the Supabase auth token - check all possible storage locations
+      let token = null;
+      
+      // Try localStorage with different key formats
+      const possibleKeys = [
+        'supabase.auth.token',
+        'sb-auth-token',
+        'sb:token',
+        'supabase.auth.data',
+        'sb-access-token',
+        'sb-refresh-token'
+      ];
+      
+      for (const key of possibleKeys) {
+        const storedValue = localStorage.getItem(key);
+        if (storedValue) {
+          token = storedValue;
+          break;
+        }
+      }
+      
+      // Try sessionStorage if not found in localStorage
+      if (!token) {
+        for (const key of possibleKeys) {
+          const storedValue = sessionStorage.getItem(key);
+          if (storedValue) {
+            token = storedValue;
+            break;
+          }
+        }
+      }
+      
+      // Development mode fallback - use a dummy token if in development
+      if (!token && process.env.NODE_ENV === 'development') {
+        console.warn('Using development mode fallback authentication');
+        token = 'dev-mode-token';
+      }
+      
+      if (!token) {
+        throw new Error("Authentication token not found. Please log in or refresh the page.");
+      }
 
-      const response = await fetch(`/api/conversations/${convId}/messages`, {
-        headers: { 'Authorization': `Bearer ${JSON.parse(token).access_token}` }
+      // Parse the token - handle different formats
+      let accessToken = '';
+      try {
+        // Try parsing as JSON
+        const parsedToken = JSON.parse(token);
+        accessToken = parsedToken.access_token || parsedToken.token || parsedToken.currentSession?.access_token || '';
+      } catch {
+        // If not JSON, use the token directly
+        accessToken = token;
+      }
+
+      if (!accessToken && process.env.NODE_ENV === 'development') {
+        // Use the dev mode token
+        accessToken = 'dev-mode-token';
+      }
+      
+      if (!accessToken) {
+        throw new Error("Invalid authentication token. Please log in again.");
+      }
+
+      // Connect to the Python FastAPI backend to get conversation history
+      const response = await fetch(`/backend/fastapi_server/conversations/${convId}/messages`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
       });
 
       if (response.status === 404) {
@@ -146,47 +212,159 @@ export function EnhancedFinanceAgent({}: EnhancedFinanceAgentProps) {
     setMessages((prev) => [...prev, loadingMessage]);
 
     try {
-      // TODO: Replace with actual token retrieval logic
-      const token = localStorage.getItem('supabase.auth.token'); // Example
-      if (!token) throw new Error("Authentication token not found.");
-
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          'Authorization': `Bearer ${JSON.parse(token).access_token}`
-        },
-        body: JSON.stringify({
-          message: messageContent,
-          conversation_id: conversationId, // Send current ID, backend handles creation if null
-          // context: {} // Add context if needed
-        }),
-      });
-
-      // Remove loading indicator
-      setMessages((prev) => prev.filter(msg => msg.agentType !== 'loading'));
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
-        throw new Error(errorData.detail || `API Error: ${response.statusText}`);
+      // Get the Supabase auth token - check all possible storage locations
+      let token = null;
+      
+      // Try localStorage with different key formats
+      const possibleKeys = [
+        'supabase.auth.token',
+        'sb-auth-token',
+        'sb:token',
+        'supabase.auth.data',
+        'sb-access-token',
+        'sb-refresh-token'
+      ];
+      
+      for (const key of possibleKeys) {
+        const storedValue = localStorage.getItem(key);
+        if (storedValue) {
+          token = storedValue;
+          break;
+        }
+      }
+      
+      // Try sessionStorage if not found in localStorage
+      if (!token) {
+        for (const key of possibleKeys) {
+          const storedValue = sessionStorage.getItem(key);
+          if (storedValue) {
+            token = storedValue;
+            break;
+          }
+        }
+      }
+      
+      // Development mode fallback - use a dummy token if in development
+      if (!token && process.env.NODE_ENV === 'development') {
+        console.warn('Using development mode fallback authentication');
+        token = 'dev-mode-token';
+      }
+      
+      if (!token) {
+        throw new Error("Authentication token not found. Please log in or refresh the page.");
       }
 
-      const data = await response.json();
-      const assistantMessage: Message = {
-        role: "assistant",
-        content: data.message,
-        agentType: data.agent_name || 'default',
-        id: data.message_id, // Assuming backend returns message ID
-        createdAt: data.created_at
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // If it was a new conversation, update the state and localStorage
-      if (!conversationId && data.conversation_id) {
-        setConversationId(data.conversation_id);
-        localStorage.setItem("currentConversationId", data.conversation_id);
+      // Parse the token - handle different formats
+      let accessToken = '';
+      try {
+        // Try parsing as JSON
+        const parsedToken = JSON.parse(token);
+        accessToken = parsedToken.access_token || parsedToken.token || parsedToken.currentSession?.access_token || '';
+      } catch {
+        // If not JSON, use the token directly
+        accessToken = token;
       }
+
+      if (!accessToken && process.env.NODE_ENV === 'development') {
+        // Use the dev mode token
+        accessToken = 'dev-mode-token';
+      }
+      
+      if (!accessToken) {
+        throw new Error("Invalid authentication token. Please log in again.");
+      }
+
+      // Connect to the Python FastAPI backend
+      try {
+        // Try to connect to the FastAPI backend
+        const response = await fetch("/backend/fastapi_server/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            message: messageContent,
+            conversation_id: conversationId, // Send current ID, backend handles creation if null
+            context: {
+              market_data: marketData, // Include market data as context
+              news_data: newsData, // Include news data as context
+              timestamp: new Date().toISOString()
+            }
+          }),
+        });
+
+        // Remove loading indicator
+        setMessages((prev) => prev.filter(msg => msg.agentType !== 'loading'));
+
+        if (!response.ok) {
+          // Handle specific error codes
+          if (response.status === 400) {
+            const errorData = await response.json();
+            if (errorData.detail && errorData.detail.includes("API key")) {
+              throw new Error("API key error: " + errorData.detail + ". Please update your API keys in your profile settings.");
+            }
+            throw new Error(errorData.detail || "Bad request");
+          } else if (response.status === 401) {
+            throw new Error("Authentication failed. Please log in again.");
+          } else {
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
+            throw new Error(errorData.detail || `API Error: ${response.statusText}`);
+          }
+        }
+        
+        const data = await response.json();
+        
+        // Create the assistant message from the response
+        const assistantMessage: Message = {
+          role: "assistant",
+          content: data.message,
+          agentType: data.agent_name || 'default',
+          id: data.message_id || `msg-${Date.now()}`, // Generate ID if not provided
+          createdAt: data.created_at || new Date().toISOString()
+        };
+        
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        // If it was a new conversation, update the state and localStorage
+        if (!conversationId && data.conversation_id) {
+          setConversationId(data.conversation_id);
+          localStorage.setItem("currentConversationId", data.conversation_id);
+        }
+      } catch (fetchError) {
+        console.error("FastAPI connection error:", fetchError);
+        
+        // Remove loading indicator if it's still there
+        setMessages((prev) => prev.filter(msg => msg.agentType !== 'loading'));
+        
+        // If we're in development mode, provide a simulated response
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Using simulated response in development mode');
+          
+          // Create a simulated response
+          const simulatedMessage: Message = {
+            role: "assistant",
+            content: `I'm currently running in simulation mode. The FastAPI backend could not be reached. Your message was: "${messageContent}". In a real environment, I would provide financial advice based on your query and the available market data.`,
+            agentType: 'financial_advisor',
+            id: `sim-${Date.now()}`,
+            createdAt: new Date().toISOString()
+          };
+          
+          setMessages((prev) => [...prev, simulatedMessage]);
+          
+          // Create a simulated conversation ID if needed
+          if (!conversationId) {
+            const simConvId = `sim-conv-${Date.now()}`;
+            setConversationId(simConvId);
+            localStorage.setItem("currentConversationId", simConvId);
+          }
+        } else {
+          // If not in development mode, show error message
+          throw fetchError;
+        }
+      }
+
+      // Note: We already set the messages in the try block
 
     } catch (err: any) {
       console.error("Error sending message:", err);
@@ -216,7 +394,7 @@ export function EnhancedFinanceAgent({}: EnhancedFinanceAgentProps) {
     setInput("");
     textareaRef.current?.focus();
   };
-
+  
   const clearCurrentChat = async () => {
     if (!conversationId) {
       startNewChat(); // If no current chat, just reset locally
@@ -226,13 +404,72 @@ export function EnhancedFinanceAgent({}: EnhancedFinanceAgentProps) {
     setIsProcessing(true); // Indicate processing
     setError(null);
     try {
-      // TODO: Replace with actual token retrieval logic
-      const token = localStorage.getItem('supabase.auth.token'); // Example
-      if (!token) throw new Error("Authentication token not found.");
+      // Get the Supabase auth token - check all possible storage locations
+      let token = null;
+      
+      // Try localStorage with different key formats
+      const possibleKeys = [
+        'supabase.auth.token',
+        'sb-auth-token',
+        'sb:token',
+        'supabase.auth.data',
+        'sb-access-token',
+        'sb-refresh-token'
+      ];
+      
+      for (const key of possibleKeys) {
+        const storedValue = localStorage.getItem(key);
+        if (storedValue) {
+          token = storedValue;
+          break;
+        }
+      }
+      
+      // Try sessionStorage if not found in localStorage
+      if (!token) {
+        for (const key of possibleKeys) {
+          const storedValue = sessionStorage.getItem(key);
+          if (storedValue) {
+            token = storedValue;
+            break;
+          }
+        }
+      }
+      
+      // Development mode fallback - use a dummy token if in development
+      if (!token && process.env.NODE_ENV === 'development') {
+        console.warn('Using development mode fallback authentication');
+        token = 'dev-mode-token';
+      }
+      
+      if (!token) {
+        throw new Error("Authentication token not found. Please log in or refresh the page.");
+      }
 
-      const response = await fetch(`/api/conversations/${conversationId}`, {
+      // Parse the token - handle different formats
+      let accessToken = '';
+      try {
+        // Try parsing as JSON
+        const parsedToken = JSON.parse(token);
+        accessToken = parsedToken.access_token || parsedToken.token || parsedToken.currentSession?.access_token || '';
+      } catch {
+        // If not JSON, use the token directly
+        accessToken = token;
+      }
+
+      if (!accessToken && process.env.NODE_ENV === 'development') {
+        // Use the dev mode token
+        accessToken = 'dev-mode-token';
+      }
+      
+      if (!accessToken) {
+        throw new Error("Invalid authentication token. Please log in again.");
+      }
+
+      // Connect to the Python FastAPI backend to delete the conversation
+      const response = await fetch(`/backend/fastapi_server/conversations/${conversationId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${JSON.parse(token).access_token}` }
+        headers: { 'Authorization': `Bearer ${accessToken}` }
       });
 
       if (!response.ok && response.status !== 404) { // Ignore 404 if already deleted

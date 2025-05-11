@@ -74,6 +74,7 @@ export function PortfolioContent() {
 
   // Process portfolio stocks with current prices and calculations
   const processPortfolioStocks = async (portfolioList: any[]) => {
+    console.log('Processing portfolio stocks:', portfolioList)
     const allStocks: any[] = []
     
     // Go through each portfolio and extract stocks
@@ -82,30 +83,66 @@ export function PortfolioContent() {
         for (const stockPosition of portfolio.portfolio_stocks) {
           try {
             // Get current stock data from API
-            const stockData = await fetchStockData(stockPosition.stock_symbol)
-            // Adjust based on the structure of fetchStockData from lib/api/market.ts
-            const currentPrice = stockData?.quote?.currentPrice || stockPosition.average_price
+            console.log(`Fetching data for ${stockPosition.stock_symbol}...`);
+            const stockData = await fetchStockData(stockPosition.stock_symbol);
+            console.log(`API data received for ${stockPosition.stock_symbol}:`, stockData);
             
-            // Calculate values
+            // Get current price with fallbacks
+            let currentPrice = 0;
+            let priceSource = 'default';
+            
+            // First try API response
+            if (stockData?.quote?.currentPrice && !isNaN(stockData.quote.currentPrice)) {
+              currentPrice = Number(stockData.quote.currentPrice);
+              priceSource = 'API';
+              console.log(`Using API price for ${stockPosition.stock_symbol}: ${currentPrice}`);
+            } 
+            // Then try stock_details from database
+            else if (stockPosition.stock_details?.last_price && !isNaN(stockPosition.stock_details.last_price)) {
+              currentPrice = Number(stockPosition.stock_details.last_price);
+              priceSource = 'database';
+              console.log(`Using database price for ${stockPosition.stock_symbol}: ${currentPrice}`);
+            }
+            // Last resort, use purchase price
+            else if (stockPosition.average_price && !isNaN(stockPosition.average_price)) {
+              currentPrice = Number(stockPosition.average_price);
+              priceSource = 'purchase price';
+              console.log(`Using purchase price for ${stockPosition.stock_symbol}: ${currentPrice}`);
+            }
+            
+            console.log(`Final price for ${stockPosition.stock_symbol}: ${currentPrice} (source: ${priceSource})`);
+            
+            // Force the price to come from the API if it exists in the response
+            // Access the raw data directly since the StockQuote type doesn't have '05. price' property
+            if (stockData && stockData.rawData && stockData.rawData['Global Quote'] && 
+                stockData.rawData['Global Quote']['05. price'] && 
+                !isNaN(parseFloat(stockData.rawData['Global Quote']['05. price']))) {
+              currentPrice = parseFloat(stockData.rawData['Global Quote']['05. price']);
+              console.log(`Overriding with direct API price field for ${stockPosition.stock_symbol}: ${currentPrice}`);
+            }
+            
+            // Use the purchase price provided by the user
             const shares = stockPosition.shares
             const purchasePrice = stockPosition.average_price
+            
+            // Calculate values
             const value = shares * currentPrice
             const gain = (currentPrice - purchasePrice) * shares
-            const gainPercent = ((currentPrice - purchasePrice) / purchasePrice) * 100
+            const gainPercent = purchasePrice > 0 ? ((currentPrice - purchasePrice) / purchasePrice) * 100 : 0
             
             allStocks.push({
               symbol: stockPosition.stock_symbol,
               name: stockPosition.stock_details?.name || stockPosition.stock_symbol,
-              shares,
-              purchasePrice,
-              currentPrice,
-              value,
-              gain,
-              gainPercent,
+              shares: Number(shares),
+              purchasePrice: Number(purchasePrice),
+              currentPrice: Number(currentPrice),
+              value: Number(value),
+              gain: Number(gain),
+              gainPercent: Number(gainPercent),
               portfolioId: portfolio.id,
               portfolioName: portfolio.name,
               purchaseDate: stockPosition.purchase_date,
-              allocation: 0, // Will calculate after all stocks are processed
+              allocation: 0 // Will calculate after all stocks are processed
             })
           } catch (error) {
             console.error(`Error processing stock ${stockPosition.stock_symbol}:`, error)
@@ -272,7 +309,6 @@ export function PortfolioContent() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="holdings">Holdings</TabsTrigger>
-          <TabsTrigger value="allocation">Allocation</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
         </TabsList>
 

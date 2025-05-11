@@ -14,3 +14,4 @@ langchain-community # Add community package often needed
 langchain-core # Add core package often needed
 yfinance>=0.2.37 # For fetching stock prices
 requests>=2.31.0 # For making HTTP requests (e.g., to news APIs)
+matplotlib>=3.10.0 # For generating charts

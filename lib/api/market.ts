@@ -54,6 +54,7 @@ interface MarketData {
 interface StockData {
   quote: StockQuote;
   time_series: TimeSeriesPoint[];
+  rawData?: any; // Store the raw API response
 }
 
 // Types for API responses
@@ -96,6 +97,7 @@ interface TimeSeriesData {
 }
 
 const CACHE_TIME_HOURS = 1; // Cache market data for 1 hour
+// Helper functions to transform Alpha Vantage API responses
 
 // Function to fetch market data (indexes, market movers)
 export async function fetchMarketData(): Promise<MarketData> {
@@ -119,72 +121,53 @@ export async function fetchMarketData(): Promise<MarketData> {
     }
 
     // If no valid cache, fetch from API
-    const apiKey = process.env.NEXT_PUBLIC_RAPIDAPI_KEY;
+    const apiKey = process.env.NEXT_PUBLIC_ALPHA_VANTAGE_KEY || 'XBYMG2VY49SX4K21';
     
     if (!apiKey) {
-      logger.warn('No RapidAPI key found, using simulated data');
+      logger.warn('No Alpha Vantage API key found, using simulated data');
       return simulateMarketData();
     }
 
-    // Fetch market indexes (major indices)
-    const indexesResponse = await fetch(
-      'https://real-time-finance-data.p.rapidapi.com/market-indices',
-      {
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'real-time-finance-data.p.rapidapi.com'
-        },
-        next: { revalidate: 60 } // Revalidate cache every minute
-      }
-    );
-
-    if (!indexesResponse.ok) {
-      throw new Error(`API error: ${indexesResponse.status}`);
-    }
-
-    const indexesData = await indexesResponse.json();
-
-    // Fetch market movers (gainers and losers)
+    // Fetch top gainers and losers
     const moversResponse = await fetch(
-      'https://real-time-finance-data.p.rapidapi.com/market-movers?type=gainers',
-      {
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'real-time-finance-data.p.rapidapi.com'
-        },
-        next: { revalidate: 60 }
-      }
+      `https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey=${apiKey}`
     );
 
     if (!moversResponse.ok) {
       throw new Error(`API error: ${moversResponse.status}`);
     }
 
-    const gainersData = await moversResponse.json();
-
-    // Fetch market losers
-    const losersResponse = await fetch(
-      'https://real-time-finance-data.p.rapidapi.com/market-movers?type=losers',
-      {
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'real-time-finance-data.p.rapidapi.com'
-        },
-        next: { revalidate: 60 }
-      }
+    const moversData = await moversResponse.json();
+    
+    // Fetch major market indices using GLOBAL_QUOTE for major ETFs
+    // SPY = S&P 500, DIA = Dow Jones, QQQ = NASDAQ, IWM = Russell 2000
+    const majorIndices = ['SPY', 'DIA', 'QQQ', 'IWM'];
+    const indexPromises = majorIndices.map(symbol => 
+      fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${apiKey}`)
+        .then(res => {
+          if (!res.ok) {
+            logger.warn(`Failed to fetch index data for ${symbol}: ${res.status}`);
+            return null;
+          }
+          return res.json();
+        })
+        .catch(err => {
+          logger.warn(`Error fetching index data for ${symbol}:`, err);
+          return null;
+        })
     );
-
-    if (!losersResponse.ok) {
-      throw new Error(`API error: ${losersResponse.status}`);
-    }
-
-    const losersData = await losersResponse.json();
+    
+    const indexResults = await Promise.all(indexPromises);
+    
+    // Extract gainers and losers data
+    const gainersData = { data: moversData.top_gainers || [] };
+    const losersData = { data: moversData.top_losers || [] };
 
     // Transform and combine the data
     const marketData: MarketData = {
-      indexes: transformIndexes(indexesData.data),
-      gainers: transformMovers(gainersData.data),
-      losers: transformMovers(losersData.data)
+      indexes: transformAlphaVantageIndices(indexResults, majorIndices),
+      gainers: transformAlphaVantageMovers(gainersData.data),
+      losers: transformAlphaVantageMovers(losersData.data)
     };
 
     // Save to cache
@@ -209,10 +192,6 @@ export async function fetchMarketData(): Promise<MarketData> {
 // Function to fetch stock data for a specific symbol
 export async function fetchStockData(symbol: string): Promise<StockData> {
   try {
-    if (!symbol) {
-      throw new Error('Symbol is required');
-    }
-
     // Try to get cached data first
     const supabase = createClient();
     const { data: cachedData, error: cacheError } = await supabase
@@ -227,59 +206,130 @@ export async function fetchStockData(symbol: string): Promise<StockData> {
       
       if (cacheAgeHours < CACHE_TIME_HOURS) {
         logger.info(`Using cached data for ${symbol}`);
+        console.log(`Using cached data for ${symbol}:`, cachedData.data);
         return cachedData.data as StockData;
       }
     }
 
     // If no valid cache, fetch from API
-    const apiKey = process.env.NEXT_PUBLIC_RAPIDAPI_KEY;
+    const apiKey = process.env.NEXT_PUBLIC_ALPHA_VANTAGE_KEY || 'XBYMG2VY49SX4K21';
     
     if (!apiKey) {
-      logger.warn('No RapidAPI key found, using simulated data');
-      return simulateStockData(symbol);
+      logger.warn('No Alpha Vantage API key found');
+      throw new Error('API key is required to fetch stock data');
     }
 
-    // Fetch stock quote data
-    const quoteResponse = await fetch(
-      `https://real-time-finance-data.p.rapidapi.com/stock-quote?symbol=${symbol}&language=en`,
-      {
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'real-time-finance-data.p.rapidapi.com'
-        },
-        next: { revalidate: 60 }
-      }
-    );
+    console.log(`Fetching data for ${symbol} from Alpha Vantage API`);
+    
+    // Fetch quote data
+    const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${apiKey}`;
+    console.log(`Quote URL: ${quoteUrl}`);
+    
+    const quoteResponse = await fetch(quoteUrl);
 
     if (!quoteResponse.ok) {
       throw new Error(`API error: ${quoteResponse.status}`);
     }
 
     const quoteData = await quoteResponse.json();
-
-    // Fetch historical data
-    const historicalResponse = await fetch(
-      `https://real-time-finance-data.p.rapidapi.com/stock-time-series?symbol=${symbol}&period=1y&language=en`,
-      {
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'real-time-finance-data.p.rapidapi.com'
-        },
-        next: { revalidate: 60 }
+    console.log(`Quote data for ${symbol}:`, quoteData);
+    
+    // Check if API returned an error or empty data
+    if (quoteData.Note || quoteData.Information || Object.keys(quoteData).length === 0) {
+      console.log(`API limit reached or invalid response for ${symbol}:`, quoteData);
+      // Try to get data from database as fallback
+      const { data: stockDetails } = await supabase
+        .from('stocks')
+        .select('*')
+        .eq('symbol', symbol)
+        .single();
+      
+      if (stockDetails && stockDetails.last_price) {
+        console.log(`Using stock details from database for ${symbol}:`, stockDetails);
+        return {
+          quote: {
+            symbol: symbol,
+            name: stockDetails.name || symbol,
+            currentPrice: stockDetails.last_price,
+            change: 0,
+            changePercent: 0,
+            open: stockDetails.last_price,
+            high: stockDetails.last_price,
+            low: stockDetails.last_price,
+            volume: 0,
+            marketCap: 0,
+            peRatio: null
+          },
+          time_series: []
+        };
       }
+      
+      // Return a default object with zeros instead of throwing an error
+      console.log(`No data available for ${symbol}, returning zeros`);
+      return {
+        quote: {
+          symbol: symbol,
+          name: symbol,
+          currentPrice: 0,
+          change: 0,
+          changePercent: 0,
+          open: 0,
+          high: 0,
+          low: 0,
+          volume: 0,
+          marketCap: 0,
+          peRatio: null
+        },
+        time_series: []
+      };
+    }
+    
+    // Check if Global Quote exists and has data
+    if (!quoteData['Global Quote'] || Object.keys(quoteData['Global Quote']).length === 0) {
+      console.log(`No Global Quote data for ${symbol}:`, quoteData);
+      // Return a default object with zeros
+      return {
+        quote: {
+          symbol: symbol,
+          name: symbol,
+          currentPrice: 0,
+          change: 0,
+          changePercent: 0,
+          open: 0,
+          high: 0,
+          low: 0,
+          volume: 0,
+          marketCap: 0,
+          peRatio: null
+        },
+        time_series: []
+      };
+    }
+    
+    // Log the exact data we're working with
+    console.log(`Global Quote data for ${symbol}:`, quoteData['Global Quote']);
+    console.log(`Price from API: ${quoteData['Global Quote']['05. price']}`);
+    
+    
+    // Fetch time series data
+    const timeSeriesResponse = await fetch(
+      `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${apiKey}&outputsize=compact`
     );
 
-    if (!historicalResponse.ok) {
-      throw new Error(`API error: ${historicalResponse.status}`);
+    if (!timeSeriesResponse.ok) {
+      throw new Error(`API error: ${timeSeriesResponse.status}`);
     }
 
-    const historicalData = await historicalResponse.json();
+    const timeSeriesData = await timeSeriesResponse.json();
 
-    // Transform and combine the data
+    // Transform the data
     const stockData: StockData = {
-      quote: transformQuote(quoteData.data, symbol),
-      time_series: transformTimeSeries(historicalData.data)
+      quote: transformAlphaVantageQuote(quoteData['Global Quote'] || {}, symbol),
+      time_series: transformAlphaVantageTimeSeries(timeSeriesData['Time Series (Daily)'] || {}),
+      rawData: quoteData // Store the raw API response
     };
+    
+    console.log(`Transformed stock data for ${symbol}:`, stockData);
 
     // Save to cache
     await supabase
@@ -294,72 +344,101 @@ export async function fetchStockData(symbol: string): Promise<StockData> {
       );
 
     return stockData;
-  } catch (error) {
-    logger.error(`Error fetching stock data for ${symbol}:`, error);
-    return simulateStockData(symbol);
+  } catch (error: any) {
+    // Log the error but don't throw it
+    logger.warn(`API error for ${symbol}: ${error?.message || 'Unknown error'}`);
+    console.log(`Using fallback data for ${symbol} due to API error`);
+    
+    // Try to get data from database as fallback
+    try {
+      const supabase = createClient();
+      const { data: stockDetails } = await supabase
+        .from('stocks')
+        .select('*')
+        .eq('symbol', symbol)
+        .single();
+      
+      if (stockDetails && stockDetails.last_price) {
+        console.log(`Using stock details from database for ${symbol}:`, stockDetails);
+        return {
+          quote: {
+            symbol: symbol,
+            name: stockDetails.name || symbol,
+            currentPrice: stockDetails.last_price,
+            change: 0,
+            changePercent: 0,
+            open: stockDetails.last_price,
+            high: stockDetails.last_price,
+            low: stockDetails.last_price,
+            volume: 0,
+            marketCap: 0,
+            peRatio: null
+          },
+          time_series: []
+        };
+      }
+    } catch (dbError) {
+      console.log(`Database fallback failed for ${symbol}:`, dbError);
+    }
+    
+    // Return an empty stock data object with zeros
+    return {
+      quote: {
+        symbol: symbol,
+        name: symbol,
+        currentPrice: 0,
+        change: 0,
+        changePercent: 0,
+        open: 0,
+        high: 0,
+        low: 0,
+        volume: 0,
+        marketCap: 0,
+        peRatio: null
+      },
+      time_series: []
+    };
   }
 }
+// Helper functions to transform Alpha Vantage API responses
+function transformAlphaVantageIndices(indexData: any[], symbols: string[]): MarketIndex[] {
+  return indexData.map((data, index) => {
+    const quote = data['Global Quote'];
+    if (!quote) return null;
+    
+    return {
+      symbol: symbols[index],
+      name: getIndexName(symbols[index]),
+      price: parseFloat(quote['05. price'] || '0'),
+      change: parseFloat(quote['09. change'] || '0'),
+      percentChange: parseFloat(quote['10. change percent']?.replace('%', '') || '0')
+    };
+  }).filter(Boolean);
+}
 
+function transformAlphaVantageMovers(moversData: any[]): StockMover[] {
+  return moversData.map(mover => ({
+    symbol: mover.ticker || '',
+    name: mover.name || mover.ticker || '',
+    price: parseFloat(mover.price || '0'),
+    change: parseFloat(mover.change_amount || '0'),
+    percentChange: parseFloat(mover.change_percentage?.replace('%', '') || '0')
+  })).filter(mover => mover.symbol);
+}
+
+// Helper function to get index name from symbol
+function getIndexName(symbol: string): string {
+  const indexMap = {
+    'SPY': 'S&P 500',
+    'DIA': 'Dow Jones',
+    'QQQ': 'NASDAQ',
+    'IWM': 'Russell 2000'
+  };
+  return indexMap[symbol] || symbol;
+}
 // Helper functions to transform API responses
 
-function transformIndexes(indexesData: IndexData[]): MarketIndex[] {
-  // Transform the indexes data to our expected format
-  return indexesData.map(index => ({
-    symbol: index.symbol || '',
-    name: index.name || '',
-    price: parseFloat(index.price || '0') || 0,
-    change: parseFloat(index.change || '0') || 0,
-    percentChange: parseFloat(index.change_percentage || '0') || 0
-  })).slice(0, 4); // Return only top 4 indices
-}
 
-function transformMovers(moversData: MoverData[]): StockMover[] {
-  // Transform the movers data to our expected format
-  return moversData.map(stock => ({
-    symbol: stock.symbol || '',
-    name: stock.name || '',
-    price: parseFloat(stock.price || '0') || 0,
-    change: parseFloat(stock.change || '0') || 0,
-    percentChange: parseFloat(stock.change_percentage || '0') || 0
-  })).slice(0, 5); // Return only top 5 movers
-}
-
-function transformQuote(quoteData: QuoteData, symbol: string): StockQuote {
-  // Transform the quote data to our expected format
-  const peRatio = quoteData.pe_ratio ? (isNaN(parseFloat(quoteData.pe_ratio)) ? null : parseFloat(quoteData.pe_ratio)) : null;
-  return {
-    symbol: symbol,
-    name: quoteData.name || symbol,
-    currentPrice: parseFloat(quoteData.price || '0') || 0,
-    change: parseFloat(quoteData.change || '0') || 0,
-    changePercent: parseFloat(quoteData.change_percentage || '0') || 0,
-    open: parseFloat(quoteData.open || '0') || 0,
-    high: parseFloat(quoteData.high || '0') || 0,
-    low: parseFloat(quoteData.low || '0') || 0,
-    volume: parseInt(quoteData.volume || '0') || 0,
-    marketCap: parseFloat(quoteData.market_cap || '0') || 0,
-    peRatio: peRatio
-  };
-}
-
-function transformTimeSeries(timeSeriesData: TimeSeriesData[] | Record<string, TimeSeriesData>): TimeSeriesPoint[] {
-  // Transform the time series data to our expected format
-  if (!timeSeriesData) return [];
-  
-  // Handle array format
-  if (Array.isArray(timeSeriesData)) {
-    return timeSeriesData.map(point => ({
-      timestamp: new Date(point.date || '').getTime(),
-      price: parseFloat(point.close || '0') || 0
-    }));
-  }
-  
-  // Handle object format
-  return Object.entries(timeSeriesData).map(([date, point]) => ({
-    timestamp: new Date(date).getTime(),
-    price: parseFloat(point.close || '0') || 0
-  }));
-}
 
 // Simulation functions for fallback data
 
@@ -389,17 +468,53 @@ function simulateMarketData(): MarketData {
     ]
   };
 }
+function transformAlphaVantageQuote(quoteData: any, symbol: string): StockQuote {
+  // Log the exact data we're transforming to help with debugging
+  console.log(`Transforming quote data for ${symbol}:`, quoteData);
+  
+  // Extract the price and make sure it's a number
+  const price = quoteData['05. price'] ? parseFloat(quoteData['05. price']) : 0;
+  console.log(`Extracted price for ${symbol}: ${price}`);
+  
+  return {
+    symbol: symbol,
+    name: getCompanyName(symbol), // Use helper function to get name
+    currentPrice: price,
+    change: parseFloat(quoteData['09. change'] || '0'),
+    changePercent: parseFloat(quoteData['10. change percent']?.replace('%', '') || '0'),
+    open: parseFloat(quoteData['02. open'] || '0'),
+    high: parseFloat(quoteData['03. high'] || '0'),
+    low: parseFloat(quoteData['04. low'] || '0'),
+    volume: parseInt(quoteData['06. volume'] || '0', 10),
+    marketCap: 0, // Not provided by Alpha Vantage GLOBAL_QUOTE
+    peRatio: null // Not provided by Alpha Vantage GLOBAL_QUOTE
+  };
+}
 
+function transformAlphaVantageTimeSeries(timeSeriesData: any): TimeSeriesPoint[] {
+  return Object.entries(timeSeriesData).map(([date, data]: [string, any]) => ({
+    timestamp: new Date(date).getTime(),
+    price: parseFloat(data['4. close'] || '0')
+  })).sort((a, b) => a.timestamp - b.timestamp);
+}
 function simulateStockData(symbol: string): StockData {
-  // Generate realistic-looking stock data for the given symbol
+  // Use consistent prices for stocks
   const basePrice = getBasePrice(symbol);
+  
+  // Generate consistent time series data
   const dates = generateDates(365);
-  const prices = generatePrices(dates.length, basePrice);
+  
+  // Use a deterministic approach to generate prices instead of random
+  // This ensures the same stock always gets the same price
+  const prices = generateConsistentPrices(dates.length, basePrice, symbol);
   
   const currentPrice = prices[prices.length - 1];
   const previousPrice = prices[prices.length - 2];
   const change = currentPrice - previousPrice;
   const changePercent = (change / previousPrice) * 100;
+  
+  // Log the simulated price for debugging
+  console.log(`Using simulated price for ${symbol}: ${currentPrice} (base: ${basePrice})`);
   
   return {
     quote: {
@@ -408,18 +523,39 @@ function simulateStockData(symbol: string): StockData {
       currentPrice: currentPrice,
       change: change,
       changePercent: changePercent,
-      open: currentPrice - (Math.random() * 2 - 1),
-      high: currentPrice + (Math.random() * 2),
-      low: currentPrice - (Math.random() * 2),
-      volume: Math.floor(Math.random() * 10000000) + 1000000,
-      marketCap: currentPrice * (Math.floor(Math.random() * 10000000000) + 1000000000),
-      peRatio: Math.floor(Math.random() * 40) + 10
+      open: currentPrice * 0.99, // Consistent open price
+      high: currentPrice * 1.01, // Consistent high
+      low: currentPrice * 0.98,  // Consistent low
+      volume: 1000000 + (symbol.charCodeAt(0) * 10000), // Deterministic volume based on symbol
+      marketCap: currentPrice * 1000000000, // Simple market cap calculation
+      peRatio: 15 + (symbol.length * 2) // Deterministic PE ratio based on symbol length
     },
     time_series: dates.map((date, index) => ({
       timestamp: date.getTime(),
       price: prices[index]
     }))
   };
+}
+
+function generateConsistentPrices(count: number, basePrice: number, symbol: string): number[] {
+  // Create a deterministic seed based on the symbol
+  let seed = 0;
+  for (let i = 0; i < symbol.length; i++) {
+    seed += symbol.charCodeAt(i);
+  }
+  
+  const prices: number[] = [];
+  let price = basePrice;
+  
+  // Generate a consistent price series based on the symbol
+  for (let i = 0; i < count; i++) {
+    // Use a deterministic formula based on the symbol and position
+    const change = Math.sin(i * 0.1 + seed * 0.01) * 0.02; // Small fluctuation based on position and symbol
+    price = price * (1 + change);
+    prices.push(parseFloat(price.toFixed(2)));
+  }
+  
+  return prices;
 }
 
 function getBasePrice(symbol: string): number {
@@ -437,7 +573,16 @@ function getBasePrice(symbol: string): number {
     'PG': 160
   };
   
-  return prices[symbol] || Math.floor(Math.random() * 500) + 50;
+  // For unknown symbols, generate a consistent price based on the symbol characters
+  if (!prices[symbol]) {
+    let baseValue = 0;
+    for (let i = 0; i < symbol.length; i++) {
+      baseValue += symbol.charCodeAt(i);
+    }
+    return 50 + (baseValue % 450); // Range from 50 to 500
+  }
+  
+  return prices[symbol];
 }
 
 function getCompanyName(symbol: string): string {

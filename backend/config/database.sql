@@ -26,7 +26,7 @@ create table if not exists public.profiles (
   phone text,
   avatar_url text,
   google_api_key text, -- Added for Google Gemini API Key
-  rapid_api_key text,  -- Added for RapidAPI Key
+  alpha_vantage_key text,  -- Added for Alpha Vantage API Key
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone
 );

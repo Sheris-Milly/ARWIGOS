@@ -1,6 +1,5 @@
 import type React from "react"
 import { SidebarProvider } from "@/components/ui/sidebar"
-import { AppLayout } from "@/components/app-layout" // Restored AppLayout import
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "sonner"
 import "./globals.css"

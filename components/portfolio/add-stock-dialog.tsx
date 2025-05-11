@@ -64,7 +64,7 @@ export function AddStockDialog({
       // Fetch current stock data to validate symbol
       const stockData = await fetchStockData(symbol)
 
-      if (!stockData || !stockData.data) {
+      if (!stockData || !stockData.quote) {
         throw new Error("Could not fetch stock data")
       }
 

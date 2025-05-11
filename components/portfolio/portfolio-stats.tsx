@@ -10,9 +10,22 @@ interface PortfolioStatsProps {
 
 export function PortfolioStats({ stocks }: PortfolioStatsProps) {
   // Calculate portfolio statistics
-  const totalValue = stocks.reduce((sum, stock) => sum + stock.value, 0)
-  const totalGain = stocks.reduce((sum, stock) => sum + stock.gain, 0)
-  const totalInvested = totalValue - totalGain
+  const totalValue = stocks.reduce((sum, stock) => {
+    return sum + Number(stock.value)
+  }, 0)
+  
+  const totalGain = stocks.reduce((sum, stock) => {
+    return sum + Number(stock.gain)
+  }, 0)
+  
+  // Calculate total invested by summing up shares * purchase price
+  const totalInvested = stocks.reduce((sum, stock) => {
+    const shares = Number(stock.shares)
+    const purchasePrice = Number(stock.purchasePrice)
+    return sum + (shares * purchasePrice)
+  }, 0)
+  
+  // Calculate gain percentage safely
   const totalGainPercent = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0
 
   // Count stocks with positive and negative gains

@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { BarChart3, Home, LineChart, PieChart, Search, TrendingUp, Info, Bot, User } from "lucide-react"
+import { BarChart3, Home, LineChart, PieChart, Search, Info, Bot, User } from "lucide-react"
 import { motion } from "framer-motion"
 
 import {
@@ -43,11 +43,6 @@ export function AppSidebar() {
     {
       title: "Research",
       links: [
-        {
-          title: "Market Research",
-          href: "/market",
-          icon: TrendingUp,
-        },
         {
           title: "Financial Planning",
           href: "/planning",

@@ -27,10 +27,13 @@ function SignupFormContent() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [googleApiKey, setGoogleApiKey] = useState("");
+  const [alphaVantageKey, setAlphaVantageKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showVerificationDialog, setShowVerificationDialog] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState("");
+  const [showApiKeyInfo, setShowApiKeyInfo] = useState(false);
 
   const router = useRouter();
   const supabase = createBrowserClient(
@@ -77,8 +80,8 @@ function SignupFormContent() {
   // ── Handlers (kept from original signup) ──
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password || !firstName || !lastName) {
-      toast.error("Please fill in all required fields.");
+    if (!email || !password || !firstName || !lastName || !googleApiKey || !alphaVantageKey) {
+      toast.error("Please fill in all required fields, including API keys.");
       return;
     }
     setLoading(true);
@@ -87,12 +90,46 @@ function SignupFormContent() {
         email,
         password,
         options: {
-          data: { first_name: firstName, last_name: lastName },
+          data: { 
+            first_name: firstName, 
+            last_name: lastName,
+            google_api_key: googleApiKey,
+            alpha_vantage_key: alphaVantageKey
+          },
           // emailRedirectTo: `${window.location.origin}/auth/callback`, // Optional
         },
       });
 
       if (error) throw error;
+
+      // Save API keys to the user profile
+      if (data.user) {
+        try {
+          // Store API keys in the profiles table
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert({
+              id: data.user.id,
+              email: email,
+              first_name: firstName,
+              last_name: lastName,
+              google_api_key: googleApiKey,
+              alpha_vantage_key: alphaVantageKey,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+
+          if (profileError) {
+            console.error('Error saving API keys:', JSON.stringify(profileError));
+            toast.error(`API key storage error: ${profileError.message || 'Unknown error'}`);
+            // Continue with signup process even if API key storage fails
+            // We'll handle this later
+          }
+        } catch (apiKeyError: any) {
+          console.error('Error saving API keys (catch):', JSON.stringify(apiKeyError));
+          toast.error(`API key storage error: ${apiKeyError?.message || 'Unknown error'}`);
+          // Continue with signup process even if API key storage fails
+        }
+      }
 
       if (data.user && data.user.identities && data.user.identities.length === 0) {
         toast.warning("Signup requires an additional step.");
@@ -272,6 +309,77 @@ function SignupFormContent() {
                   >
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
+                </div>
+              </div>
+              
+              {/* API Keys Section with Info Button */}
+              <div className="pt-2 pb-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-emerald-300">API Keys</h3>
+                  <button 
+                    type="button"
+                    onClick={() => setShowApiKeyInfo(!showApiKeyInfo)}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Why do I need these?
+                  </button>
+                </div>
+                
+                {showApiKeyInfo && (
+                  <div className="mt-2 mb-3 bg-gray-700/40 p-3 rounded-lg text-xs text-emerald-100/80 border border-emerald-600/20">
+                    <p><strong>Why we need API keys:</strong></p>
+                    <ul className="list-disc list-inside mt-1 space-y-1">
+                      <li>Google API Key: Powers our AI financial advisor using Google's Gemini model</li>
+                      <li> Alpha Vantage Key: Provides real-time market data and financial news</li>
+                    </ul>
+                    <p className="mt-2">You can get these keys from:</p>
+                    <ul className="list-disc list-inside mt-1">
+                      <li><a href="https://ai.google.dev/gemini-api/docs/api-key" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Google AI Studio</a> (Gemini API)</li>
+                      <li><a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">RapidAPI Marketplace</a></li>
+                    </ul>
+                    <p className="mt-2 text-emerald-300/90">Your keys are stored securely and used only for your account.</p>
+                  </div>
+                )}
+              </div>
+              
+              {/* Google API Key Input */}
+              <div className="space-y-1.5">
+                <Label htmlFor="google-api-key" className="text-sm font-medium text-emerald-100/80">Google API Key</Label>
+                <div className="relative flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 h-4 w-4 text-emerald-100/50 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18" />
+                  </svg>
+                  <Input
+                    id="google-api-key"
+                    type="text"
+                    placeholder="AIza..."
+                    value={googleApiKey}
+                    onChange={(e) => setGoogleApiKey(e.target.value)}
+                    required
+                    className="pl-10 w-full bg-gray-800/50 border-white/10 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/80 text-white placeholder-gray-500 rounded-lg shadow-sm transition duration-150 ease-in-out"
+                  />
+                </div>
+              </div>
+              
+              {/* Alpha Vantage API Key Input */}
+              <div className="space-y-1.5">
+                <Label htmlFor="alpha-vantage-key" className="text-sm font-medium text-emerald-100/80">Alpha Vantage API Key</Label>
+                <div className="relative flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 h-4 w-4 text-emerald-100/50 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+                  </svg>
+                  <Input
+                    id="alpha-vantage-key"
+                    type="text"
+                    placeholder="Your Alpha Vantage API Key"
+                    value={alphaVantageKey}
+                    onChange={(e) => setAlphaVantageKey(e.target.value)}
+                    required
+                    className="pl-10 w-full bg-gray-800/50 border-white/10 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/80 text-white placeholder-gray-500 rounded-lg shadow-sm transition duration-150 ease-in-out"
+                  />
                 </div>
               </div>
 

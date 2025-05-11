@@ -24,6 +24,8 @@ type UserProfile = {
   avatar_url?: string
   created_at: string
   updated_at?: string
+  google_api_key?: string
+  alpha_vantage_key?: string
 }
 
 export function ProfileContent() {
@@ -34,6 +36,8 @@ export function ProfileContent() {
     first_name: "",
     last_name: "",
     phone: "",
+    google_api_key: "",
+    alpha_vantage_key: ""
   })
   
   const router = useRouter()
@@ -84,6 +88,8 @@ export function ProfileContent() {
           first_name: profileData.first_name || "",
           last_name: profileData.last_name || "",
           phone: profileData.phone || "",
+          google_api_key: profileData.google_api_key || "",
+          alpha_vantage_key: profileData.alpha_vantage_key || ""
         })
       } catch (error) {
         console.error("Error fetching profile:", error)
@@ -156,6 +162,8 @@ export function ProfileContent() {
         first_name: profile.first_name || "",
         last_name: profile.last_name || "",
         phone: profile.phone || "",
+        google_api_key: profile.google_api_key || "",
+        alpha_vantage_key: profile.alpha_vantage_key || ""
       })
     }
     setIsEditing(false)
@@ -338,6 +346,70 @@ export function ProfileContent() {
                   </p>
                 </div>
                 <Button variant="outline">Change Password</Button>
+                <Separator className="my-4" />
+                <div className="space-y-1">
+                  <h3 className="text-lg font-medium">API Keys</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Manage your Google API Key and Alpha Vantage API Key for personalized access.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="google_api_key">Google API Key</Label>
+                    <Input
+                      id="google_api_key"
+                      name="google_api_key"
+                      type="password"
+                      value={formData.google_api_key || profile?.google_api_key || ""}
+                      onChange={e => setFormData({ ...formData, google_api_key: e.target.value })}
+                      placeholder="Enter your Google API Key"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="alpha_vantage_key">Alpha Vantage API Key</Label>
+                    <Input
+                      id="alpha_vantage_key"
+                      name="alpha_vantage_key"
+                      type="password"
+                      value={formData.alpha_vantage_key || profile?.alpha_vantage_key || ""}
+                      onChange={e => setFormData({ ...formData, alpha_vantage_key: e.target.value })}
+                      placeholder="Enter your Alpha Vantage API Key"
+                    />
+                  </div>
+                  <Button 
+                    onClick={async () => {
+                      try {
+                        setIsLoading(true);
+                        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                        if (sessionError || !session) throw new Error('User session not found. Please log in again.');
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/user/api-keys`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`,
+                          },
+                          body: JSON.stringify({
+                            googleApiKey: formData.google_api_key || profile?.google_api_key || "",
+                            alphaVantageKey: formData.alpha_vantage_key || profile?.alpha_vantage_key || ""
+                          }),
+                        });
+                        const result = await response.json();
+                        if (!response.ok || !result.success) throw new Error(result.message || 'Failed to save API keys.');
+                        toast.success('API keys updated successfully.');
+                        setProfile((prev: any) => ({ ...prev, google_api_key: formData.google_api_key, alpha_vantage_key: formData.alpha_vantage_key }));
+                      } catch (error: any) {
+                        toast.error(error.message || 'Failed to update API keys.');
+                      } finally {
+                        setIsLoading(false);
+                      }
+                    }}
+                    disabled={isLoading}
+                    className="flex items-center gap-2"
+                  >
+                    <Save className="h-4 w-4" />
+                    Save API Keys
+                  </Button>
+                </div>
               </div>
             </CardContent>
             <CardFooter className="border-t bg-muted/50 px-6 py-4">
@@ -356,4 +428,4 @@ export function ProfileContent() {
       </Tabs>
     </div>
   )
-} 
+}

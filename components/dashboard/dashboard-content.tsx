@@ -72,28 +72,66 @@ export function DashboardContent() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  // Portfolio data calculations
-  const portfolioValue = portfolios.reduce((total, portfolio) => total + (portfolio.total_value || 0), 0)
-  const portfolioChange = portfolios.length > 0 ? 
-    portfolios.reduce((total, p) => {
-      // For now, we're using a placeholder for change calculation
-      // In a real app, you would track historical values and calculate actual change
-      const change = p.total_value * 0.025; // Example 2.5% change
-      return total + change;
-    }, 0) / portfolioValue * 100 : 0
+  // Calculate real portfolio data
+  const portfolioValue = portfolios.reduce((total, portfolio) => {
+    // Sum up the actual value of all stocks in the portfolio
+    if (portfolio.portfolio_stocks) {
+      return total + portfolio.portfolio_stocks.reduce((portfolioTotal, stock) => {
+        const shares = Number(stock.shares) || 0
+        const currentPrice = stock.stock_details?.last_price || stock.average_price || 0
+        return portfolioTotal + (shares * currentPrice)
+      }, 0)
+    }
+    return total + (portfolio.total_value || 0)
+  }, 0)
+  
+  // Calculate real portfolio gain/loss
+  const portfolioGain = portfolios.reduce((total, portfolio) => {
+    if (portfolio.portfolio_stocks) {
+      return total + portfolio.portfolio_stocks.reduce((portfolioGain, stock) => {
+        const shares = Number(stock.shares) || 0
+        const purchasePrice = Number(stock.average_price) || 0
+        const currentPrice = stock.stock_details?.last_price || purchasePrice || 0
+        const gain = (currentPrice - purchasePrice) * shares
+        return portfolioGain + gain
+      }, 0)
+    }
+    return total
+  }, 0)
+  
+  // Calculate portfolio change percentage
+  const portfolioInvested = portfolios.reduce((total, portfolio) => {
+    if (portfolio.portfolio_stocks) {
+      return total + portfolio.portfolio_stocks.reduce((portfolioInvested, stock) => {
+        const shares = Number(stock.shares) || 0
+        const purchasePrice = Number(stock.average_price) || 0
+        return portfolioInvested + (shares * purchasePrice)
+      }, 0)
+    }
+    return total
+  }, 0)
+  
+  const portfolioChange = portfolioInvested > 0 ? (portfolioGain / portfolioInvested) * 100 : 0
   const lastUpdated = new Date()
 
-  // Find top performing stock across all portfolios
+  // Find actual top performing stock across all portfolios
   const topPerformer = (() => {
-    let best = { symbol: "", change: 0 };
+    let best = { symbol: "", name: "", change: 0, changePercent: 0 };
     portfolios.forEach(portfolio => {
       if (portfolio.portfolio_stocks) {
         portfolio.portfolio_stocks.forEach((stock: any) => {
-          // This is a placeholder - in a real app, you'd calculate actual daily change
-          // Using random values for demo purposes
-          const change = Math.random() * 5;
-          if (change > best.change) {
-            best = { symbol: stock.stock_symbol, change };
+          const purchasePrice = Number(stock.average_price) || 0
+          const currentPrice = stock.stock_details?.last_price || purchasePrice
+          if (purchasePrice > 0) {
+            const changePercent = ((currentPrice - purchasePrice) / purchasePrice) * 100
+            if (changePercent > best.changePercent) {
+              best = { 
+                symbol: stock.stock_symbol, 
+                name: stock.stock_details?.name || stock.stock_symbol,
+                change: currentPrice - purchasePrice,
+                changePercent: changePercent
+              };
+            }
           }
         });
       }
@@ -129,7 +167,7 @@ export function DashboardContent() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('google_api_key, rapid_api_key')
+        .select('google_api_key, alpha_vantage_key')
         .eq('id', session.user.id)
         .single();
 
@@ -145,7 +183,7 @@ export function DashboardContent() {
       }
 
       setUserProfile(profile);
-      if (!profile || !profile.google_api_key || !profile.rapid_api_key) {
+      if (!profile || !profile.google_api_key || !profile.alpha_vantage_key) {
         setShowApiKeyModal(true);
       }
     } catch (error) {
@@ -183,7 +221,7 @@ export function DashboardContent() {
       }
 
       // Optionally, update local userProfile state or re-fetch
-      setUserProfile((prev: any) => ({ ...prev, google_api_key: googleApiKey, rapid_api_key: rapidApiKey }));
+      setUserProfile((prev: any) => ({ ...prev, google_api_key: googleApiKey, alpha_vantage_key: rapidApiKey }));
       setShowApiKeyModal(false); // Close modal on success
       // Potentially reload data or re-enable features that depend on these keys
       // For example, re-run loadData() if it was skipped due to missing keys
@@ -274,11 +312,11 @@ export function DashboardContent() {
       // Check if API keys are missing
       // This check might be redundant if the modal forces key entry, 
       // but good for robustness or if keys can be removed elsewhere.
-      if (!userProfile?.rapid_api_key || !userProfile?.google_api_key) {
+      if (!userProfile?.alpha_vantage_key || !userProfile?.google_api_key) {
         // Check against fetched userProfile instead of env vars for user-specific keys
         // If apiKeysChecked is false, we might not have the profile yet, so this could be a premature error.
         // Consider showing this error only if apiKeysChecked is true and keys are still missing.
-        if (apiKeysChecked && (!userProfile?.rapid_api_key || !userProfile?.google_api_key)) {
+        if (apiKeysChecked && (!userProfile?.alpha_vantage_key || !userProfile?.google_api_key)) {
             setApiError(true);
         }
       }
@@ -442,10 +480,12 @@ export function DashboardContent() {
             {isLoading ? (
               <div className="h-8 w-3/4 bg-muted rounded animate-pulse"></div>
             ) : (
-              <div className="text-2xl font-bold">{marketData?.marketSummaryResponse?.result?.[0]?.regularMarketPrice?.fmt || "N/A"}</div>
+              <div className="text-2xl font-bold">
+                {marketData?.indexes?.find(idx => idx.symbol === '^GSPC' || idx.name.includes('S&P 500'))?.price.toFixed(2) || "N/A"}
+              </div>
             )}
-            <p className={`text-xs ${marketData?.marketSummaryResponse?.result?.[0]?.regularMarketChangePercent?.raw >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {isLoading ? "Loading..." : `${marketData?.marketSummaryResponse?.result?.[0]?.regularMarketChangePercent?.fmt || "N/A"}`}
+            <p className={`text-xs ${(marketData?.indexes?.find(idx => idx.symbol === '^GSPC' || idx.name.includes('S&P 500'))?.percentChange || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              {isLoading ? "Loading..." : `${(marketData?.indexes?.find(idx => idx.symbol === '^GSPC' || idx.name.includes('S&P 500'))?.percentChange || 0) >= 0 ? '+' : ''}${(marketData?.indexes?.find(idx => idx.symbol === '^GSPC' || idx.name.includes('S&P 500'))?.percentChange || 0).toFixed(2)}%`}
             </p>
           </CardContent>
         </Card>
@@ -460,8 +500,8 @@ export function DashboardContent() {
             ) : (
               <div className="text-2xl font-bold">{topPerformer.symbol || "N/A"}</div>
             )}
-            <p className={`text-xs ${topPerformer.change >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {portfolioLoading ? "Loading..." : `${topPerformer.change > 0 ? '+' : ''}${topPerformer.change.toFixed(2)}% (Demo)`}
+            <p className={`text-xs ${topPerformer.changePercent >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              {portfolioLoading ? "Loading..." : `${topPerformer.changePercent >= 0 ? '+' : ''}${topPerformer.changePercent.toFixed(2)}%`}
             </p>
           </CardContent>
         </Card>
