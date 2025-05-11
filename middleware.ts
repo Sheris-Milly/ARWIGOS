@@ -2,9 +2,9 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 // Define public paths that don't require authentication
-const publicPaths = ['/login', '/signup', '/auth/callback', '/reset-password', '/about', '/terms', '/privacy']; // Keep original public paths + auth callback
+const publicPaths = ['/', '/login', '/signup', '/auth/callback', '/reset-password', '/about', '/terms', '/privacy']; // Keep original public paths + auth callback
 // Define paths that require authentication
-const protectedPaths = ['/', '/dashboard', '/portfolio', '/advisor', '/market', '/planning', '/profile'];
+const protectedPaths = ['/dashboard', '/portfolio', '/advisor', '/market', '/planning', '/profile'];
 // Define paths that should always be allowed, regardless of authentication state
 const alwaysAllowedPaths = ['/auth/callback']; // Add the Supabase auth callback path
 
@@ -54,6 +54,11 @@ export async function middleware(req: NextRequest) {
 
   // If trying to access a protected route or a protected API route without a user session
   if (!user && (isProtectedRoute || (isApiRoute /* && !isPublicApiRoute */))) { // Add check for public API routes if needed
+    // Check if we're in development mode and allow access to protected routes for easier development
+    if (process.env.NODE_ENV === 'development' && path === '/') {
+      return response; // Allow access to root path in development
+    }
+    
     const redirectUrl = req.nextUrl.clone();
     redirectUrl.pathname = '/login';
     redirectUrl.searchParams.set('redirectTo', path); // Keep track of the original path

@@ -226,15 +226,9 @@ function SignupFormContent() {
             animate={{ opacity: 1, scale: 1, transition: { duration: 0.5, ease: "easeOut" } }}
           >
             <div className="flex justify-center mb-4">
-              <div className="p-5 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/30">
-                <div className="relative">
-                  <LineChart className="w-8 h-8 text-white absolute opacity-70 -left-1 -top-1" />
-                  <Shield className="w-8 h-8 text-white absolute opacity-70 -right-1 -top-1" />
-                  <MessageSquareText className="w-8 h-8 text-white absolute opacity-70 top-3" />
-                  <div className="w-8 h-8 flex items-center justify-center">
-                    <span className="text-white font-bold text-xl">A</span>
-                  </div>
-                </div>
+            <div className="p-4 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/30">
+                <User className="w-7 h-7 text-white" /> {/* Changed icon to User */} 
+
               </div>
             </div>
 

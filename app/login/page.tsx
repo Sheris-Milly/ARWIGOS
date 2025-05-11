@@ -29,6 +29,8 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showVerificationAlert, setShowVerificationAlert] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetPasswordSuccess, setResetPasswordSuccess] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createBrowserClient(
@@ -72,6 +74,36 @@ function LoginContent() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      toast.error("Please enter your email address", {
+        description: "We need your email to send the password reset link."
+      });
+      return;
+    }
+
+    try {
+      setIsResettingPassword(true);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (error) throw error;
+      
+      setResetPasswordSuccess(true);
+      toast.success("Password reset email sent", {
+        description: "Check your inbox for the password reset link."
+      });
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to send reset email", { 
+        description: err.message || "Please try again later."
+      });
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -189,19 +221,28 @@ function LoginContent() {
                   </Alert>
                 </motion.div>
               )}
+              {resetPasswordSuccess && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  animate={{ opacity: 1, height: "auto", marginBottom: "1rem", transition: { duration: 0.3 } }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0, transition: { duration: 0.2 } }}
+                >
+                  <Alert className="border-emerald-500/40 bg-emerald-900/30 text-emerald-200">
+                    <Mail className="h-5 w-5 text-emerald-400" />
+                    <AlertTitle className="text-emerald-300 font-semibold">Password Reset Email Sent</AlertTitle>
+                    <AlertDescription className="text-emerald-300/80">
+                      Check your inbox for the password reset link.
+                    </AlertDescription>
+                  </Alert>
+                </motion.div>
+              )}
             </AnimatePresence>
 
             <div className="flex justify-center mb-4">
               {/* Logo Icon */}
-              <div className="p-5 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/30">
-                <div className="relative">
-                  <LineChart className="w-8 h-8 text-white absolute opacity-70 -left-1 -top-1" />
-                  <Shield className="w-8 h-8 text-white absolute opacity-70 -right-1 -top-1" />
-                  <MessageSquareText className="w-8 h-8 text-white absolute opacity-70 top-3" />
-                  <div className="w-8 h-8 flex items-center justify-center">
-                    <span className="text-white font-bold text-xl">A</span>
-                  </div>
-                </div>
+              <div className="p-4 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/30">
+                <Lock className="w-7 h-7 text-white" />
+
               </div>
             </div>
 
@@ -245,16 +286,26 @@ function LoginContent() {
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
+              
+              <div className="flex justify-end mb-1">
+                <button 
+                  type="button" 
+                  onClick={handleResetPassword}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 hover:underline transition-colors duration-200"
+                >
+                  Forgot Password?
+                </button>
+              </div>
 
               {/* Enhanced Button */}
               <motion.button
                 type="submit"
-                disabled={loading}
+                disabled={loading || isResettingPassword}
                 className="w-full h-12 flex items-center justify-center bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-lg shadow-lg shadow-emerald-500/40 hover:shadow-emerald-500/60 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-emerald-500 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
                 whileHover={{ scale: 1.03, transition: { duration: 0.2 } }}
                 whileTap={{ scale: 0.98 }}
               >
-                {loading ? (
+                {loading || isResettingPassword ? (
                   <motion.div
                     className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
                     animate={{ rotate: 360 }}
