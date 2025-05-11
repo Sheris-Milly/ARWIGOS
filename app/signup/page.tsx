@@ -200,11 +200,8 @@ function SignupFormContent() {
             >
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-emerald-500">ARWIGOS</span>
             </motion.h1>
-            <motion.p className="text-lg text-emerald-100/80 mb-3" variants={itemVariants}>
+            <motion.p className="text-lg text-emerald-100/80 mb-10" variants={itemVariants}>
               AI-powered Real-time Wealth Insights & Goals-Oriented Strategy
-            </motion.p>
-            <motion.p className="text-md text-emerald-100/70 mb-10" variants={itemVariants}>
-              Join our platform for intelligent financial guidance tailored to your goals.
             </motion.p>
 
             <motion.div className="space-y-6" variants={itemVariants}>
@@ -224,7 +221,7 @@ function SignupFormContent() {
 
           {/* Right: Glassy Signup Card (styled like login) */}
           <motion.div
-            className="w-full max-w-2xl bg-gray-900/70 backdrop-blur-xl border border-white/10 rounded-2xl p-8 sm:p-10 space-y-6 shadow-2xl shadow-black/30"
+            className="w-full max-w-md bg-gray-900/70 backdrop-blur-xl border border-white/10 rounded-2xl p-8 sm:p-10 space-y-6 shadow-2xl shadow-black/30"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1, transition: { duration: 0.5, ease: "easeOut" } }}
           >
