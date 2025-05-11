@@ -524,9 +524,6 @@ export function DashboardContent() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList>
             <TabsTrigger value="overview">Portfolio Overview</TabsTrigger>
-            <TabsTrigger value="news">Market News</TabsTrigger>
-            <TabsTrigger value="agent">Finance Agent</TabsTrigger>
-            <TabsTrigger value="performers">Top Performers</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">

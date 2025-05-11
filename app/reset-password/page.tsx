@@ -31,6 +31,7 @@ function ResetPasswordContent() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resetError, setResetError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [missingToken, setMissingToken] = useState(false);
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,10 +50,18 @@ function ResetPasswordContent() {
     
     // If we don't have these parameters, the user might have navigated here directly
     if (!accessToken) {
-      // We'll allow the form to be shown, but it will likely fail when submitted
+      // Show a helpful message instead of allowing form submission that will fail
+      setMissingToken(true);
       console.log("Missing access token in URL parameters");
+    } else {
+      setMissingToken(false);
     }
   }, [searchParams]);
+  
+  // Function to request a new password reset email
+  const requestNewResetLink = () => {
+    router.push("/forgot-password");
+  };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +92,13 @@ function ResetPasswordContent() {
       const accessToken = searchParams.get("access_token");
       
       if (!accessToken) {
-        throw new Error("Missing access token. Please use the link from the reset email.");
+        setMissingToken(true);
+        setResetError(true);
+        setErrorMessage("Missing access token. Please use the link from the reset email or request a new one.");
+        toast.error("Missing access token", {
+          description: "Please use the complete link from the reset email or request a new one."
+        });
+        return;
       }
       
       // Update the user's password
@@ -205,7 +220,29 @@ function ResetPasswordContent() {
             </h2>
             <p className="text-center text-emerald-100/70 -mt-1">Create a new password for your ARWIGOS account</p>
 
-            <form onSubmit={handleResetPassword} className="space-y-5">
+            {missingToken ? (
+              <div className="space-y-5">
+                <Alert className="border-amber-500/40 bg-amber-900/30 text-amber-200">
+                  <AlertCircle className="h-5 w-5 text-amber-400" />
+                  <AlertTitle className="text-amber-300 font-semibold">Missing Access Token</AlertTitle>
+                  <AlertDescription className="text-amber-300/80">
+                    You need to use the complete link from the password reset email. If you don't have a valid link, please request a new one.
+                  </AlertDescription>
+                </Alert>
+                
+                <motion.button
+                  type="button"
+                  onClick={requestNewResetLink}
+                  className="w-full h-12 flex items-center justify-center bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-lg shadow-lg shadow-emerald-500/40 hover:shadow-emerald-500/60 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-emerald-500 transition-all duration-300"
+                  whileHover={{ scale: 1.03, transition: { duration: 0.2 } }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <span>Request New Reset Link</span>
+                  <ArrowRight size={20} className="ml-2" />
+                </motion.button>
+              </div>
+            ) : (
+              <form onSubmit={handleResetPassword} className="space-y-5">
               {/* New Password Field */}
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-400/70 group-focus-within:text-emerald-400 transition-colors duration-200" />
@@ -272,6 +309,7 @@ function ResetPasswordContent() {
                 )}
               </motion.button>
             </form>
+            )}
 
             <p className="mt-6 text-center text-sm text-gray-400">
               Remember your password?{" "}
