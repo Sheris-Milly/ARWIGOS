@@ -4,8 +4,8 @@ import { AboutContent } from "@/components/about/about-content"
 import { MentorAcknowledgment } from "@/components/about/mentor-acknowledgment"
 
 export const metadata: Metadata = {
-  title: "About | Finance Advisor",
-  description: "Learn about our innovative Finance Advisor application, our team, and our multi-agent AI system.",
+  title: "About | ArwiGos",
+  description: "Learn about our innovative ARWIGOS application, our team, and our multi-agent AI system.",
 }
 
 export default function AboutPage() {
@@ -13,8 +13,6 @@ export default function AboutPage() {
     <AppLayout>
       <div className="container mx-auto px-4 py-8 space-y-12">
         <AboutContent />
-        
-        <MentorAcknowledgment />
       </div>
     </AppLayout>
   )

@@ -85,7 +85,7 @@ export function AppSidebar() {
             animate={{ opacity: state === "collapsed" ? 0 : 1 }}
             transition={{ duration: 0.2 }}
           >
-            Finance Advisor
+            ArwiGos
           </motion.span>
         </div>
         <div className="px-2 py-2">

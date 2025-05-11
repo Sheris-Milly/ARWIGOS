@@ -29,7 +29,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <header className="flex h-16 items-center gap-4 border-b bg-background px-6">
           <SidebarTrigger />
           <div className="flex flex-1 items-center justify-between">
-            <h1 className="text-xl font-semibold">Finance Advisor</h1>
+            <h1 className="text-xl font-semibold">ArwiGos</h1>
             {mounted && (
               <Button
                 variant="outline"

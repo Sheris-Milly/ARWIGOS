@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { motion } from "framer-motion"
-import { LineChart, BarChart, PieChart, Bot, Database, Server, Code, BarChart3 } from "lucide-react"
+import { LineChart, BarChart, PieChart, Bot, Database, Server, Code, BarChart3, Shield, GraduationCap, Heart } from "lucide-react"
 import { useState, useEffect } from "react"
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart as RechartsBarChart, Bar, Cell } from "recharts"
 import { InnovationSection } from "./innovation-section"
@@ -270,85 +270,261 @@ export function AboutContent() {
       description: "Real-time financial metrics and portfolio overview with interactive charts and visualizations.",
       icon: LineChart,
       color: "#10b981", // emerald-500
-      details:
-        "Our dashboard provides a comprehensive overview of your financial status with real-time updates. It features interactive charts that respond to your interactions, allowing you to drill down into specific data points. The dashboard is designed to give you a quick snapshot of your portfolio performance, market trends, and key financial metrics.",
     },
     {
       title: "Portfolio Analysis",
       description: "Detailed portfolio tracking with performance metrics, allocation analysis, and rebalancing tools.",
       icon: PieChart,
       color: "#3b82f6", // blue-500
-      details:
-        "The Portfolio Analysis section offers in-depth insights into your investments. Track performance over time, analyze asset allocation across different sectors and investment types, and use our rebalancing tools to optimize your portfolio. The interactive charts allow you to visualize your portfolio composition and identify areas for improvement.",
     },
     {
       title: "Market Research",
       description: "Up-to-date market data, stock information, and financial news from reliable sources.",
       icon: BarChart,
       color: "#8b5cf6", // violet-500
-      details:
-        "Stay informed with our Market Research section, which provides real-time market data, detailed stock information, and the latest financial news. Track market indices, analyze stock performance, and read curated news articles relevant to your investments. The data is sourced from reliable financial APIs and updated in real-time.",
     },
     {
-      title: "AI Financial Advisor",
+      title: "AI-Powered Insights",
       description: "Personalized financial advice and insights powered by advanced AI technology.",
       icon: Bot,
       color: "#f59e0b", // amber-500
-      details:
-        "Our AI Financial Advisor leverages advanced natural language processing to provide personalized financial guidance. It can analyze your portfolio, offer investment recommendations, and help with financial planning. The advisor learns from your interactions to provide increasingly relevant advice over time, all while maintaining strict privacy standards.",
+    },
+  ]
+
+  const agentSystem = [
+    {
+      title: "Advisory Agent",
+      description: "Provides personalized financial recommendations based on your goals, risk tolerance, and market conditions.",
+      icon: Bot,
+      color: "#10b981", // emerald-500
+    },
+    {
+      title: "Portfolio Manager Agent",
+      description: "Monitors and optimizes your investment portfolio, suggesting rebalancing opportunities and asset allocation strategies.",
+      icon: PieChart,
+      color: "#3b82f6", // blue-500
+    },
+    {
+      title: "Market Analyst Agent",
+      description: "Analyzes market trends, news, and economic indicators to identify investment opportunities and potential risks.",
+      icon: BarChart3,
+      color: "#8b5cf6", // violet-500
+    },
+    {
+      title: "Planning Agent",
+      description: "Helps you create and adjust financial plans to meet your short and long-term goals, considering your unique circumstances.",
+      icon: LineChart,
+      color: "#f59e0b", // amber-500
+    },
+    {
+      title: "Risk Assessment Agent",
+      description: "Evaluates potential risks in your investment strategy and recommends ways to mitigate them while maintaining growth potential.",
+      icon: Shield,
+      color: "#ec4899", // pink-500
     },
   ]
 
   return (
     <div className="space-y-16 py-8">
-      {/* About the App Section */}
+      {/* ARWIGOS Section */}
       <section className="space-y-12">
-        <div className="text-center space-y-3">
-          <h2 className="text-3xl font-bold">About Finance Advisor</h2>
-          <p className="text-muted-foreground max-w-2xl mx-auto">
-            Finance Advisor was created with a simple mission: to democratize financial intelligence and
-            empower individuals to make informed investment decisions.
+        <div className="text-center space-y-4">
+          <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-emerald-500 to-blue-500 bg-clip-text text-transparent inline-block">ARWIGOS</h2>
+          <p className="text-muted-foreground max-w-3xl mx-auto text-lg">
+            AI-powered Real-time Wealth Insights & Goals-Oriented Strategy
           </p>
         </div>
-        
-        <div className="grid gap-6 md:grid-cols-2">
-          {features.map((feature, index) => (
-                    <FeatureCard
-              key={feature.title}
-              {...feature}
-              delay={index * 0.1}
-            />
-          ))}
+
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/30 p-8 border border-emerald-100 dark:border-emerald-800/30">
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl"></div>
+          
+          <div className="relative space-y-6">
+            <div className="flex flex-col md:flex-row gap-4 items-center">
+              <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-4 rounded-xl shadow-lg shadow-emerald-500/20">
+                <LineChart className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-semibold">Your Intelligent Financial Companion</h3>
+                <p className="text-muted-foreground">Experience a new era of personal finance management</p>
+              </div>
+            </div>
+            
+            <p className="text-base leading-relaxed">
+              ARWIGOS combines real-time financial data with advanced AI to deliver personalized insights and recommendations tailored to your unique financial situation. Our platform doesn't just track your investments—it actively helps you optimize them through intelligent analysis and forward-looking strategies.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+              {features.map((feature, index) => (
+                <div 
+                  key={feature.title}
+                  className="bg-white/50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-800 hover:shadow-md transition-all duration-300 animate-fade-in"
+                  style={{ animationDelay: `${index * 0.1}s` }}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div 
+                      className="rounded-full p-2" 
+                      style={{ backgroundColor: `${feature.color}20` }}
+                    >
+                      <feature.icon className="h-5 w-5" style={{ color: feature.color }} />
+                    </div>
+                    <h3 className="font-medium">{feature.title}</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{feature.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
         
-        <InnovationSection />
+        {/* Multi-Agent System Section */}
+        <div className="mt-16">
+          <div className="text-center space-y-4 mb-8">
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-emerald-500 to-blue-500 bg-clip-text text-transparent inline-block">Multi-Agent Intelligence System</h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              ARWIGOS is powered by a sophisticated multi-agent system that works in harmony to deliver comprehensive financial guidance.
+            </p>
+          </div>
+          
+          <div className="relative bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900/50 dark:to-gray-800/50 rounded-xl p-6 border border-gray-200 dark:border-gray-800 overflow-hidden">
+            <div className="absolute inset-0 bg-grid-gray-900/10 dark:bg-grid-white/5"></div>
+            
+            <div className="relative">
+              <div className="flex justify-center mb-8">
+                <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-4 rounded-full shadow-lg shadow-emerald-500/20">
+                  <Bot className="w-8 h-8 text-white" />
+                </div>
+              </div>
+              
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+                {agentSystem.map((agent, index) => (
+                  <div 
+                    key={agent.title}
+                    className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-md transition-all duration-300 animate-fade-in"
+                    style={{ animationDelay: `${index * 0.1}s` }}
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div 
+                        className="rounded-full p-2" 
+                        style={{ backgroundColor: `${agent.color}20` }}
+                      >
+                        <agent.icon className="h-5 w-5" style={{ color: agent.color }} />
+                      </div>
+                      <h3 className="font-medium">{agent.title}</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{agent.description}</p>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="mt-6 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+                <p className="text-sm text-center">
+                  Our multi-agent system creates a powerful synergy, where each specialized agent contributes to a comprehensive financial intelligence network that adapts to your unique needs and goals.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
       
       {/* Our Team Section */}
       <section className="space-y-12">
         <div className="text-center space-y-3">
-          <h2 className="text-3xl font-bold">Our Team</h2>
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-500 to-blue-500 bg-clip-text text-transparent inline-block">Our Team</h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Meet the talented individuals behind Finance Advisor
+            Meet the talented individuals behind ARWIGOS
           </p>
-                      </div>
+        </div>
 
         <div className="grid gap-6 md:grid-cols-2">
-                  {teamMembers.map((member, index) => (
-            <TeamMemberCard
-                      key={member.name}
-              {...member}
-              delay={index * 0.1}
-            />
-                              ))}
-                            </div>
+          {teamMembers.map((member, index) => (
+            <div
+              key={member.name}
+              className="rounded-lg border p-6 transition-all duration-200 hover:shadow-md animate-fade-in"
+              style={{ animationDelay: `${index * 0.1}s` }}
+            >
+              <div className="flex flex-col items-center mb-4">
+                <div className="relative group mb-3">
+                  <div 
+                    className="w-24 h-24 rounded-full overflow-hidden border-4 flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg z-10 relative"
+                    style={{ borderColor: `${member.color}40` }}
+                  >
+                    <img
+                      src={member.image || "/placeholder.svg"}
+                      alt={`${member.name} - ${member.role}`}
+                      className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-110"
+                    />
+                  </div>
+                  
+                  {/* Enlarged photo on hover */}
+                  <div className="absolute opacity-0 group-hover:opacity-100 -top-16 left-1/2 -translate-x-1/2 transition-all duration-300 z-20 transform scale-0 group-hover:scale-100 origin-bottom pointer-events-none">
+                    <div className="w-48 h-48 rounded-lg overflow-hidden border-4 shadow-xl" style={{ borderColor: `${member.color}60` }}>
+                      <img
+                        src={member.image || "/placeholder.svg"}
+                        alt={`${member.name} - ${member.role}`}
+                        className="object-cover w-full h-full"
+                      />
+                    </div>
+                    <div className="w-4 h-4 bg-white rotate-45 absolute -bottom-2 left-1/2 -translate-x-1/2 border-r border-b" style={{ borderColor: `${member.color}60` }}></div>
+                  </div>
+                </div>
+                <h3 className="font-medium text-lg">{member.name}</h3>
+                <p className="text-sm text-muted-foreground text-center">{member.role}</p>
+              </div>
+              
+              <div
+                className="mt-4 p-4 rounded-lg w-full"
+                style={{ backgroundColor: `${member.color}10` }}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="rounded-full p-2" style={{ backgroundColor: `${member.color}20` }}>
+                    <member.icon className="h-5 w-5" style={{ color: member.color }} />
+                  </div>
+                  <p className="text-sm">{member.description}</p>
+                </div>
+
+                <div className="mt-3">
+                  <p className="text-sm font-medium mb-2">Skills & Expertise:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {member.skills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium"
+                        style={{ backgroundColor: `${member.color}20`, color: member.color }}
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
       
-      {/* Technology Section */}
-      
-      {/* Mentor Acknowledgment needs to be re-added if desired */}
-      {/* <MentorAcknowledgment /> */}
-
+      {/* Mentor Acknowledgment Section */}
+      <section className="space-y-6">
+        <div className="relative overflow-hidden rounded-lg border bg-card p-8 shadow-sm animate-fade-in">
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-primary/10" />
+          
+          <div className="relative z-10 flex flex-col items-center text-center space-y-6">
+            <div className="rounded-full bg-primary/10 p-4">
+              <GraduationCap className="h-8 w-8 text-primary" />
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-2xl font-bold bg-gradient-to-r from-emerald-500 to-blue-500 bg-clip-text text-transparent inline-block">Special Thanks to Our Mentor</h3>
+              <p className="text-xl font-semibold text-primary">Professor ALAMI Lamrani</p>
+            </div>
+            
+            <div className="flex items-center space-x-2 text-primary">
+              <Heart className="h-5 w-5" />
+              <span className="font-medium">With sincere appreciation</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
