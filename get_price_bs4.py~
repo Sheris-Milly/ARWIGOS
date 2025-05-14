@@ -1,0 +1,88 @@
+import requests
+import pandas as pd
+import datetime as dt
+
+class NoStockDataError(Exception):
+    pass
+
+def get_google_data(symbol: str,
+                    frequency: int = 60,
+                    window_days: int = 1,
+                    exchange: str = 'NASDAQ'
+                   ) -> pd.DataFrame:
+    """
+    Fetch intraday data for `symbol` from Google Finance's getprices endpoint.
+    Returns a DataFrame with columns
+      ['datetime','open','high','low','close','volume'].
+    window_days=1 will give you today’s intraday up to the current minute.
+    """
+    url = (
+        f"http://www.google.com/finance/getprices?"
+        f"i={frequency}&p={window_days}d&f=d,o,h,l,c,v"
+        f"&df=cpct&q={symbol}&x={exchange}"
+    )
+    resp = requests.get(url)
+    resp.raise_for_status()
+    lines = resp.text.splitlines()
+
+    # find where the DATA= header ends
+    try:
+        data_start = lines.index("DATA=") + 1
+    except ValueError:
+        raise NoStockDataError(f"No data for {symbol!r}")
+
+    records = []
+    anchor_ts = None
+
+    for row in lines[data_start:]:
+        if not row:
+            continue
+        parts = row.split(',')
+        time_col = parts[0]
+
+        # anchor row: a<unix_ts>
+        if time_col.startswith('a'):
+            anchor_ts = int(time_col[1:])
+            unix_ts = anchor_ts
+        else:
+            # offset row: offset minutes from anchor
+            if anchor_ts is None:
+                continue
+            offset = int(time_col)
+            unix_ts = anchor_ts + offset * frequency
+
+        # parse the numeric columns
+        o, h, l, c, v = map(float, parts[1:])
+        dt_obj = dt.datetime.fromtimestamp(unix_ts)
+        records.append({
+            'datetime': dt_obj,
+            'open': o,
+            'high': h,
+            'low': l,
+            'close': c,
+            'volume': v
+        })
+
+    if not records:
+        raise NoStockDataError(f"No records parsed for {symbol!r}")
+
+    return pd.DataFrame(records)
+
+
+def get_current_price(symbol: str, exchange: str = 'NASDAQ') -> float:
+    """
+    Returns the most recent 'close' price for the given symbol.
+    """
+    df = get_google_data(symbol, frequency=60, window_days=1, exchange=exchange)
+    # the last row is the freshest price
+    latest_close = df['close'].iloc[-1]
+    return latest_close
+
+
+if __name__ == "__main__":
+    for sym in ["AAPL", "GOOG", "MSFT"]:
+        try:
+            price = get_current_price(sym)
+            print(f"{sym} → ${price:.2f}")
+        except Exception as e:
+            print(f"{sym} → ERROR: {e}")
