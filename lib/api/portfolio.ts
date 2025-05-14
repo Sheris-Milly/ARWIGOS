@@ -131,6 +131,24 @@ export async function addStockToPortfolio(
         throw new Error(`Could not retrieve valid stock information for ${symbol}.`);
     }
 
+    // First check if the stock already exists in this portfolio
+    const { data: existingPortfolioStock, error: portfolioStockError } = await supabase
+      .from('portfolio_stocks')
+      .select('id, stock_symbol, shares')
+      .eq('portfolio_id', portfolioId)
+      .eq('stock_symbol', stockData.quote.symbol)
+      .single();
+
+    if (portfolioStockError && portfolioStockError.code !== 'PGRST116') { // PGRST116: No rows found
+      console.error('Error checking portfolio_stocks table:', portfolioStockError);
+      throw new Error('Failed to check if stock already exists in portfolio.');
+    }
+
+    // If the stock already exists in the portfolio, throw an error
+    if (existingPortfolioStock) {
+      throw new Error(`Stock ${stockData.quote.symbol} already exists in this portfolio. Please modify the existing position instead.`);
+    }
+
     // Ensure the stock exists in the 'stocks' table before inserting into 'portfolio_stocks'
     const supabaseStock = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -184,7 +202,7 @@ export async function addStockToPortfolio(
 
     if (error) {
       console.error("Error adding stock to portfolio_stocks:", error);
-      // Check for unique constraint violation (e.g., stock already exists in portfolio)
+      // Even with our check above, still handle unique constraint violation as a fallback
       if (error.code === '23505') { // Adjust code based on your DB error for unique constraints
           throw new Error(`Stock ${stockData.quote.symbol} already exists in this portfolio.`);
       }

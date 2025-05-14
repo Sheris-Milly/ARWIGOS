@@ -15,7 +15,7 @@ import { CreatePortfolioDialog } from "@/components/portfolio/create-portfolio-d
 import { useToast } from "@/components/ui/use-toast"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetchUserPortfolios, removeStockFromPortfolio, createDefaultPortfolio } from "@/lib/api/portfolio"
-import { fetchStockData } from "@/lib/api/market" // Updated import path
+import { fetchStockData, fetchCurrentStockPrice, fetchReliableStockPrice } from "@/lib/api/market" // Updated import path
 import {
   Dialog,
   DialogContent,
@@ -82,28 +82,28 @@ export function PortfolioContent() {
       if (portfolio.portfolio_stocks && portfolio.portfolio_stocks.length > 0) {
         for (const stockPosition of portfolio.portfolio_stocks) {
           try {
-            // Get current stock data from API
-            console.log(`Fetching data for ${stockPosition.stock_symbol}...`);
-            const stockData = await fetchStockData(stockPosition.stock_symbol);
-            console.log(`API data received for ${stockPosition.stock_symbol}:`, stockData);
+            // Get current price using our reliable price function
+            console.log(`Getting current price for ${stockPosition.stock_symbol}...`);
+            const priceResult = await fetchReliableStockPrice(stockPosition.stock_symbol);
+            console.log(`Price result for ${stockPosition.stock_symbol}:`, priceResult);
             
             // Get current price with fallbacks
             let currentPrice = 0;
             let priceSource = 'default';
             
-            // First try API response
-            if (stockData?.quote?.currentPrice && !isNaN(stockData.quote.currentPrice)) {
-              currentPrice = Number(stockData.quote.currentPrice);
-              priceSource = 'API';
-              console.log(`Using API price for ${stockPosition.stock_symbol}: ${currentPrice}`);
-            } 
-            // Then try stock_details from database
+            // First priority: Use our reliable price data
+            if (priceResult.price > 0) {
+              currentPrice = priceResult.price;
+              priceSource = priceResult.source;
+              console.log(`Using ${priceResult.source} price for ${stockPosition.stock_symbol}: ${currentPrice}`);
+            }
+            // Second priority: Use stock_details from database
             else if (stockPosition.stock_details?.last_price && !isNaN(stockPosition.stock_details.last_price)) {
               currentPrice = Number(stockPosition.stock_details.last_price);
               priceSource = 'database';
               console.log(`Using database price for ${stockPosition.stock_symbol}: ${currentPrice}`);
             }
-            // Last resort, use purchase price
+            // Last resort: Use purchase price
             else if (stockPosition.average_price && !isNaN(stockPosition.average_price)) {
               currentPrice = Number(stockPosition.average_price);
               priceSource = 'purchase price';
@@ -111,15 +111,6 @@ export function PortfolioContent() {
             }
             
             console.log(`Final price for ${stockPosition.stock_symbol}: ${currentPrice} (source: ${priceSource})`);
-            
-            // Force the price to come from the API if it exists in the response
-            // Access the raw data directly since the StockQuote type doesn't have '05. price' property
-            if (stockData && stockData.rawData && stockData.rawData['Global Quote'] && 
-                stockData.rawData['Global Quote']['05. price'] && 
-                !isNaN(parseFloat(stockData.rawData['Global Quote']['05. price']))) {
-              currentPrice = parseFloat(stockData.rawData['Global Quote']['05. price']);
-              console.log(`Overriding with direct API price field for ${stockPosition.stock_symbol}: ${currentPrice}`);
-            }
             
             // Use the purchase price provided by the user
             const shares = stockPosition.shares

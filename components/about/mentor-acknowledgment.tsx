@@ -12,8 +12,8 @@ export function MentorAcknowledgment() {
         
         <div className="space-y-2">
           <h3 className="text-2xl font-bold">Special Thanks to Our Mentor</h3>
-          <p className="text-xl font-semibold text-primary">Professor ALAMI Lamrani</p>
-        </div>
+          <p className="text-xl font-semibold text-primary">Professor Youssef Lamrani </p>
+        </div
         
       
         

@@ -1,21 +1,18 @@
-import { AppLayout } from '@/components/app-layout';
-import { EnhancedFinanceAgent } from '@/components/advisor/enhanced-finance-agent';
 import { Metadata } from 'next';
+import { AppLayout } from '@/components/app-layout';
+import { AdvisorClientWrapper } from '@/components/advisor/advisor-client-wrapper';
 
 export const metadata: Metadata = {
-  title: 'AI Advisor - Finance Dashboard',
-  description: 'Interact with the AI Financial Advisor for personalized insights.',
+  title: 'AI Finance Agent - ArwiGos',
+  description: 'Interact with our AI Finance Agent system for personalized financial insights.',
 };
 
 export default function AdvisorPage() {
-  // Removed data fetching as EnhancedFinanceAgent now handles its own data/state
-  // const marketData = await fetchMarketData(); // Example fetch
-  // const newsData = await fetchNewsData(); // Example fetch
-
-  // Wrap the content with AppLayout
   return (
     <AppLayout>
-      <EnhancedFinanceAgent />
+      <div className="h-full w-full p-1">
+        <AdvisorClientWrapper />
+      </div>
     </AppLayout>
   );
 }

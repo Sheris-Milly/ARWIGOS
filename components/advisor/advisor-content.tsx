@@ -1,11 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
+import { getAuthHeader, isDevMode } from "@/lib/auth/dev-auth"
 import { EnhancedFinanceAgent } from "@/components/advisor/enhanced-finance-agent"
-import { Bot, RefreshCw } from "lucide-react"
+import { ConversationList } from "@/components/advisor/conversation-list"
+import { Bot, RefreshCw, PanelLeftIcon, PanelLeftClose } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
 import { useToast } from "@/components/ui/use-toast"
+import { cn } from "@/lib/utils"
 import { fetchMarketData } from "@/lib/api/market"
 import { fetchStockNews } from "@/lib/api/news"
 import {
@@ -25,10 +28,23 @@ export function AdvisorContent() {
   const [apiError, setApiError] = useState(false)
   const [showApiErrorDialog, setShowApiErrorDialog] = useState(false)
   const [apiKeysMissing, setApiKeysMissing] = useState(false)
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const { toast } = useToast()
+  
+  // References for the enhanced finance agent component
+  const agentRef = useRef<any>(null)
 
   useEffect(() => {
     loadData()
+  }, [])
+
+  // Load the current conversation ID from localStorage on mount
+  useEffect(() => {
+    const storedConvId = localStorage.getItem("currentConversationId")
+    if (storedConvId) {
+      setCurrentConversationId(storedConvId)
+    }
   }, [])
 
   const loadData = async () => {
@@ -37,263 +53,189 @@ export function AdvisorContent() {
       setApiError(false)
       setApiKeysMissing(false)
       
-      // Get the Supabase auth token - check all possible storage locations
-      let token = null;
+      // Try fetching market data
+      const marketDataResult = await fetchMarketData()
+      setMarketData(marketDataResult)
       
-      // Try localStorage with different key formats
-      const possibleKeys = [
-        'supabase.auth.token',
-        'sb-auth-token',
-        'sb:token',
-        'supabase.auth.data',
-        'sb-access-token',
-        'sb-refresh-token'
-      ];
+      // Try fetching news data
+      const newsDataResult = await fetchStockNews()
+      setNewsData(newsDataResult)
       
-      for (const key of possibleKeys) {
-        const storedValue = localStorage.getItem(key);
-        if (storedValue) {
-          token = storedValue;
-          break;
-        }
-      }
-      
-      // Try sessionStorage if not found in localStorage
-      if (!token) {
-        for (const key of possibleKeys) {
-          const storedValue = sessionStorage.getItem(key);
-          if (storedValue) {
-            token = storedValue;
-            break;
-          }
-        }
-      }
-      
-      // Development mode fallback - use a dummy token if in development
-      if (!token && process.env.NODE_ENV === 'development') {
-        console.warn('Using development mode fallback authentication');
-        token = 'dev-mode-token';
-      }
-      
-      // Check if user has API keys configured
-      if (token) {
-        try {
-          let accessToken = '';
-          try {
-            // Try parsing as JSON
-            const parsedToken = JSON.parse(token);
-            accessToken = parsedToken.access_token || parsedToken.token || parsedToken.currentSession?.access_token || '';
-          } catch {
-            // If not JSON, use the token directly
-            accessToken = token;
-          }
-          
-          if (!accessToken && process.env.NODE_ENV === 'development') {
-            // Use the dev mode token
-            accessToken = 'dev-mode-token';
-          }
-
-          // Check API keys by making a health check request to the FastAPI backend
-          const response = await fetch('/backend/fastapi_server/health', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-          });
-          
-          if (response.ok) {
-            // API is available, now check if user has API keys
-            const userResponse = await fetch('/backend/fastapi_server/user/api-keys', {
-              headers: { 'Authorization': `Bearer ${accessToken}` }
-            });
-            
-            if (!userResponse.ok && userResponse.status === 400) {
-              // API keys are missing
-              setApiKeysMissing(true);
-              setShowApiErrorDialog(true);
-            }
-          } else {
-            // API is not available
-            setApiError(true);
-            setShowApiErrorDialog(true);
-          }
-        } catch (error) {
-          console.error("Error checking API keys:", error);
-          setApiError(true);
-        }
-      }
-      
-      // Load cached market data
-      const cachedMarketData = localStorage.getItem("marketData")
-      const cachedMarketTimestamp = localStorage.getItem("marketDataTimestamp")
-      const cachedNewsData = localStorage.getItem("newsData")
-      const cachedNewsTimestamp = localStorage.getItem("newsDataTimestamp")
-      const now = new Date().getTime()
-      const marketDataIsValid =
-        cachedMarketData && cachedMarketTimestamp && now - Number.parseInt(cachedMarketTimestamp) < 15 * 60 * 1000
-      const newsDataIsValid =
-        cachedNewsData && cachedNewsTimestamp && now - Number.parseInt(cachedNewsTimestamp) < 24 * 60 * 60 * 1000
-      
-      let market
-      let news
-      
-      // Try to load market data
-      if (marketDataIsValid) {
-        market = JSON.parse(cachedMarketData)
-      } else {
-        try {
-          market = await fetchMarketData()
-          localStorage.setItem("marketData", JSON.stringify(market))
-          localStorage.setItem("marketDataTimestamp", now.toString())
-        } catch (error) {
-          console.error("Error fetching market data:", error)
-          setApiError(true)
-          // Use fallback data
-          market = await fetchMarketData()
-        }
-      }
-      
-      // Try to load news data
-      if (newsDataIsValid) {
-        news = JSON.parse(cachedNewsData)
-      } else {
-        try {
-          news = await fetchStockNews("SPY:NYSE")
-          localStorage.setItem("newsData", JSON.stringify(news))
-          localStorage.setItem("newsDataTimestamp", now.toString())
-        } catch (error) {
-          console.error("Error fetching news data:", error)
-          setApiError(true)
-          // Use fallback data
-          news = await fetchStockNews("SPY:NYSE")
-        }
-      }
-      
-      setMarketData(market)
-      setNewsData(news)
-      
-      // Show error dialog if needed
-      if (apiError || apiKeysMissing) {
-        setShowApiErrorDialog(true)
-      }
-    } catch (error) {
-      console.error("Error in loadData:", error)
+    } catch (err) {
+      console.error("Failed to load market data:", err)
       setApiError(true)
       setShowApiErrorDialog(true)
-      toast({
-        title: "Error loading data",
-        description: "Could not fetch the latest market data. Using simulated data instead.",
-        variant: "destructive",
-      })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      // Refresh market data
+      const marketDataResult = await fetchMarketData()
+      setMarketData(marketDataResult)
+      
+      // Refresh news data
+      const newsDataResult = await fetchStockNews()
+      setNewsData(newsDataResult)
+      
+      toast({
+        title: "Data refreshed",
+        description: "Financial market data has been updated.",
+        duration: 3000,
+      })
+    } catch (err) {
+      console.error("Failed to refresh data:", err)
+      toast({
+        title: "Refresh failed",
+        description: "Could not update market data. Using cached data.",
+        variant: "destructive",
+        duration: 5000,
+      })
+    } finally {
       setIsRefreshing(false)
     }
   }
 
-  const handleRefresh = () => {
-    setIsRefreshing(true)
-    localStorage.removeItem("marketData")
-    localStorage.removeItem("marketDataTimestamp")
-    localStorage.removeItem("newsData")
-    localStorage.removeItem("newsDataTimestamp")
-    loadData()
-    toast({
-      title: "Refreshing data",
-      description: "Fetching the latest market information...",
-    })
+  // Handle conversation selection from the sidebar
+  const handleSelectConversation = (conversationId: string) => {
+    setCurrentConversationId(conversationId)
+    // Store the selected conversation ID in localStorage
+    localStorage.setItem("currentConversationId", conversationId)
+    // Call the agent's fetchHistory method using the ref
+    if (agentRef.current?.fetchHistory) {
+      agentRef.current.fetchHistory(conversationId)
+    }
+  }
+
+  // Handle starting a new chat
+  const handleNewChat = () => {
+    // Call the agent's startNewChat method using the ref
+    if (agentRef.current?.startNewChat) {
+      agentRef.current.startNewChat()
+    }
+    setCurrentConversationId(null)
+    localStorage.removeItem("currentConversationId")
+  }
+
+  // Toggle sidebar visibility for responsive design
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen)
   }
 
   return (
-    <div className="flex flex-col gap-8 max-w-3xl mx-auto py-8 px-2 md:px-0">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="flex items-center justify-between mb-2"
+    <div className="flex h-[calc(100vh-60px)] w-full overflow-hidden">
+      {/* Conversation Sidebar */}
+      <div 
+        className={cn(
+          "w-72 transition-all duration-300 ease-in-out",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0 md:w-0"
+        )}
       >
-        <div className="flex items-center gap-3">
-          <Bot className="h-9 w-9 text-primary" />
-          <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-primary to-blue-500 text-transparent bg-clip-text">AI Financial Advisor</h1>
+        <ConversationList 
+          currentConversationId={currentConversationId}
+          onSelectConversation={handleSelectConversation}
+          onNewChat={handleNewChat}
+          className="h-full"
+        />
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col relative">
+        {/* Header */}
+        <div className="flex items-center justify-between p-3 border-b border-zinc-800">
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-zinc-400 hover:text-white md:flex"
+              onClick={toggleSidebar}
+            >
+              {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftIcon size={18} />}
+            </Button>
+            <div className="h-8 w-8 rounded-lg bg-blue-800/30 text-blue-400 flex items-center justify-center">
+              <Bot size={18} />
+            </div>
+            <h1 className="text-lg font-semibold text-zinc-100">Financial Advisor</h1>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isLoading || isRefreshing}
+            className="h-8 flex items-center gap-1.5 text-zinc-400 hover:text-white"
+          >
+            <RefreshCw size={14} className={isRefreshing ? "animate-spin" : ""} />
+            <span className="hidden sm:inline">Refresh Data</span>
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="flex items-center gap-2 border-primary/30"
-        >
-          <RefreshCw className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </motion.div>
+        
+        {/* Agent Chat Interface */}
+        <div className="flex-1 overflow-hidden">
+          {isLoading ? (
+            <div className="flex-1 flex items-center justify-center h-full">
+              <div className="flex flex-col items-center">
+                <RefreshCw size={40} className="animate-spin text-zinc-400 mb-4" />
+                <h2 className="text-lg font-medium mb-2 text-zinc-200">Loading market data...</h2>
+                <p className="text-sm text-zinc-400">Setting up your financial advisor experience</p>
+              </div>
+            </div>
+          ) : (
+            <EnhancedFinanceAgent 
+              marketData={marketData} 
+              newsData={newsData} 
+              isLoading={isLoading} 
+            />
+          )}
+        </div>
+      </div>
 
       {/* API Error Dialog */}
-      <Dialog open={showApiErrorDialog} onOpenChange={setShowApiErrorDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-yellow-500 flex items-center gap-2">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="lucide lucide-alert-triangle"
-              >
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
-                <path d="M12 9v4"></path>
-                <path d="M12 17h.01"></path>
-              </svg>
-              {apiKeysMissing ? "API Keys Required" : "Simulation Mode Active"}
-            </DialogTitle>
-            <DialogDescription>
-              {apiKeysMissing 
-                ? "The AI Advisor requires your personal API keys to function properly. Please update your profile with your Google and RapidAPI keys."
-                : "Due to API connection issues, you are currently viewing simulated data. The data shown is for demonstration purposes only and does not reflect real-time market conditions."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="bg-yellow-500/10 p-4 rounded-md border border-yellow-500/20 text-sm">
-            <p className="font-medium text-yellow-500 mb-2">To resolve this issue:</p>
-            <ul className="list-disc pl-5 text-muted-foreground space-y-1">
-              {apiKeysMissing ? (
-                <>
-                  <li>Go to your Profile page and update your API keys</li>
-                  <li>You need both a Google API key (for Gemini) and a RapidAPI key</li>
-                  <li>Get a Google API key from <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Google AI Studio</a></li>
-                  <li>Get a RapidAPI key from <a href="https://rapidapi.com/finance-data-api" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">RapidAPI Marketplace</a></li>
-                </>
-              ) : (
-                <>
-                  <li>Ensure you have valid API keys configured in your profile settings</li>
-                  <li>Check your internet connection</li>
-                  <li>Try refreshing the data using the refresh button</li>
-                </>
-              )}
-            </ul>
-          </div>
-          <DialogFooter className="flex flex-col sm:flex-row gap-2">
-            {apiKeysMissing && (
-              <Button 
-                onClick={() => window.location.href = '/profile'}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                Go to Profile Settings
-              </Button>
-            )}
-            <Button onClick={() => setShowApiErrorDialog(false)}>
-              {apiKeysMissing ? "I'll Do This Later" : "Continue in Simulation Mode"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {apiError && showApiErrorDialog && (
+        <Dialog open={showApiErrorDialog} onOpenChange={setShowApiErrorDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>API Connection Error</DialogTitle>
+              <DialogDescription>
+                There was a problem connecting to the financial data APIs. This might affect the advisor's ability to provide accurate recommendations.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-2">
+              <p className="text-sm">You can still chat with the advisor, but market-specific questions might have limited answers.</p>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowApiErrorDialog(false)}>Continue Anyway</Button>
+              <Button variant="outline" onClick={handleRefresh}>Try Again</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-        <div className="rounded-3xl shadow-xl border border-primary/10 bg-gradient-to-br from-white via-blue-50 to-primary/5 dark:from-background dark:via-primary/10 dark:to-background p-0">
-          <EnhancedFinanceAgent marketData={marketData} newsData={newsData} isLoading={isLoading} />
-        </div>
-      </motion.div>
+      {/* API Keys Missing Dialog */}
+      {apiKeysMissing && showApiErrorDialog && (
+        <Dialog open={showApiErrorDialog} onOpenChange={setShowApiErrorDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>API Keys Missing</DialogTitle>
+              <DialogDescription>
+                Your profile is missing necessary API keys for the financial advisor to function properly.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-2">
+              <p className="text-sm">Please contact your administrator or update your profile with:</p>
+              <ul className="list-disc ml-6 mt-2 text-sm">
+                <li>Google API key (for the AI models)</li>
+                <li>Alpha Vantage API key (for financial data)</li>
+              </ul>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowApiErrorDialog(false)}>Continue with Limited Features</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

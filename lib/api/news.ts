@@ -5,8 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 const supabaseClient = createClient();
 
 // API Configuration
-const API_HOST = 'real-time-finance-data.p.rapidapi.com';
-const API_KEY = process.env.NEXT_PUBLIC_RAPIDAPI_KEY || ''; // Use environment variable
+// API Configuration
+const API_HOST = 'www.alphavantage.co';
+const API_KEY = process.env.NEXT_PUBLIC_ALPHA_VANTAGE_KEY || 'XBYMG2VY49SX4K21'; // Use environment variable or test key
 
 // Define interfaces for API response
 interface NewsApiResponse {
@@ -42,35 +43,29 @@ export interface NewsArticle {
  * Fetches news articles for a given stock symbol
  */
 export async function fetchNewsForSymbol(symbol: string): Promise<NewsArticle[]> {
-  const url = `https://real-time-finance-data.p.rapidapi.com/stock-news?symbol=${symbol}&language=en`;
+  const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${symbol}&apikey=${API_KEY}`;
   
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'x-rapidapi-key': API_KEY,
-        'x-rapidapi-host': API_HOST
-      }
-    });
+    const response = await fetch(url);
 
     if (!response.ok) {
       throw new Error(`API request failed with status ${response.status}`);
     }
 
-    const data: NewsApiResponse = await response.json();
+    const data = await response.json();
     
-    if (data.status !== "OK" || !data.data?.news) {
+    if (!data || !data.feed) {
       throw new Error('Invalid API response format');
     }
 
-    return data.data.news.map(item => ({
-      id: item.article_url, // Using URL as unique ID
-      title: item.article_title,
-      description: item.article_title, // Using title as description since API doesn't provide one
-      url: item.article_url,
-      imageUrl: item.article_photo_url,
+    return data.feed.map(item => ({
+      id: item.url, // Using URL as unique ID
+      title: item.title,
+      description: item.summary || item.title,
+      url: item.url,
+      imageUrl: item.banner_image || '',
       source: item.source,
-      publishedAt: item.post_time_utc,
+      publishedAt: item.time_published,
       symbol: symbol
     }));
 
@@ -79,7 +74,6 @@ export async function fetchNewsForSymbol(symbol: string): Promise<NewsArticle[]>
     return [];
   }
 }
-
 /**
  * Fetches news articles relevant to the user's portfolio
  */
@@ -167,22 +161,15 @@ export async function fetchLatestNews() {
     }
     
     // Check if we're missing API key - go straight to simulated data
-    if (!process.env.NEXT_PUBLIC_RAPIDAPI_KEY) {
+    if (!process.env.NEXT_PUBLIC_ALPHA_VANTAGE_KEY && !API_KEY) {
       console.log('Using simulated news data - API key missing');
       return { articles: simulateLatestNews() };
     }
     
-    // Use Real-Time Finance API for general financial news
-    const url = 'https://real-time-finance-data.p.rapidapi.com/market-trends';
-    const options = {
-      method: 'GET',
-      headers: {
-        'x-rapidapi-key': process.env.NEXT_PUBLIC_RAPIDAPI_KEY || '',
-        'x-rapidapi-host': 'real-time-finance-data.p.rapidapi.com'
-      }
-    };
-
-    const response = await fetch(url, options);
+    // Use Alpha Vantage API for financial news
+    const url = 'https://www.alphavantage.co/query?function=NEWS_SENTIMENT&apikey=' + API_KEY;
+    
+    const response = await fetch(url);
     
     if (!response.ok) {
       console.error(`News API request failed with status ${response.status}`);
@@ -191,37 +178,41 @@ export async function fetchLatestNews() {
 
     const data = await response.json();
     
-    if (!data || data.status !== "OK" || !data.data || !data.data.news || !Array.isArray(data.data.news)) {
+    if (!data || !data.feed || !Array.isArray(data.feed)) {
       console.error('Invalid response format from news API');
       return { articles: simulateLatestNews() };
     }
 
     // Transform the data to match our expected format
-    const articles = data.data.news.map((item: any) => ({
-      title: item.article_title || 'Financial News',
-      description: item.article_summary || item.article_title || '',
-      url: item.article_url || '#',
-      source: { name: item.source || 'Financial News' },
-      publishedAt: item.post_time_utc || new Date().toISOString(),
-      urlToImage: item.article_photo_url || null
+    const articles = data.feed.map((item) => ({
+      title: item.title || 'Financial News',
+      description: item.summary || item.title,
+      url: item.url,
+      imageUrl: item.banner_image || '',
+      source: item.source,
+      publishedAt: item.time_published,
+      sentiment: item.overall_sentiment_label || 'Neutral'
     }));
 
-    const result = { articles };
-    
-    // Save to cache in Supabase
-    await supabaseClient.from('news_cache').insert({
-      type: 'latest_news',
-      data: JSON.stringify(result),
-      created_at: new Date().toISOString()
-    });
-    
-    return result;
+    // Cache the results
+    if (articles.length > 0) {
+      try {
+        await supabaseClient.from('news_cache').upsert({
+          type: 'latest_news',
+          data: JSON.stringify({ articles }),
+          created_at: new Date().toISOString()
+        }, { onConflict: 'type' });
+      } catch (cacheError) {
+        console.error('Error caching news data:', cacheError);
+      }
+    }
+
+    return { articles };
   } catch (error) {
     console.error('Error fetching latest news:', error);
     return { articles: simulateLatestNews() };
   }
 }
-
 /**
  * Fetches news related to a specific stock
  * @param symbol Stock symbol (e.g., AAPL, MSFT)

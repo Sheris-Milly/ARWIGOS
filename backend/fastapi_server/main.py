@@ -1,4 +1,5 @@
 import os
+import uuid
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
@@ -7,41 +8,58 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, BaseSettings
+
 import requests
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
-import supabase
+
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from supabase import create_client, Client
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 from langchain.tools import Tool
+from langchain.chains.llm import LLMChain
 from langchain.chains.router import LLMRouterChain
 from langchain.chains.router.multi_prompt import MULTI_PROMPT_ROUTER_TEMPLATE
 from langchain.chains.router.llm_router import RouterOutputParser
 from langchain_community.chat_message_histories import ChatMessageHistory
+# Import our agent definitions
+from agents import (
+    get_agent_definition,
+    get_agent_routing_map,
+    generate_conversation_title
+)
 
 # ---------------------------
 # Load environment & settings
 # ---------------------------
-load_dotenv()  # must come first
+load_dotenv()
+
 
 class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
     SUPABASE_URL: str
     SUPABASE_KEY: str
-    # Default API keys (used as fallback if user doesn't have their own)
-    DEFAULT_GOOGLE_API_KEY: str = ""
+
+    DEFAULT_GOOGLE_API_KEY: str = "AIzaSyBn78kZVluHdkJ8inKVp7enOQatqCKERt0"
     DEFAULT_ALPHA_VANTAGE_KEY: str = "XBYMG2VY49SX4K21"
     ALPHA_VANTAGE_HOST: str = "www.alphavantage.co"
+
     GEMINI_MODEL: str = "gemini-2.0-flash"
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
 
 settings = Settings()
 
@@ -50,30 +68,29 @@ settings = Settings()
 # ---------------------------
 app = FastAPI(
     title="Finance Advisor API",
-    description="API for financial advice, portfolio analysis, and planning"
+    description="API for financial advice, portfolio analysis, and planning",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=[settings.FRONTEND_URL, "http://localhost:3000", "http://localhost:3001", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# mount static for chart images
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ---------------------------
-# Globals (initialized on startup)
-# ---------------------------
-supabase_client: supabase.Client  # no assignment here
+supabase_client: Client
 llm: ChatGoogleGenerativeAI
 router_chain: LLMRouterChain
 agent_destinations: Dict[str, AgentExecutor]
+
 
 # ---------------------------
 # Pydantic models
@@ -82,11 +99,17 @@ class ChatInput(BaseModel):
     message: str
     context: Optional[Dict[Any, Any]] = None
 
+
 class ChatOutput(BaseModel):
     message: str
     agent_name: str
+    agent_display_name: str
+    agent_icon: str
+    agent_color: str
     conversation_id: str
+    conversation_title: str
     created_at: str
+
 
 # ---------------------------
 # Auth dependency
@@ -98,29 +121,39 @@ class UserWithKeys:
         self.google_api_key = google_api_key
         self.alpha_vantage_key = alpha_vantage_key
 
-async def get_current_user(authorization: str = Header(...)):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid auth token")
-    token = authorization.removeprefix("Bearer ").strip()
+
+async def get_current_user(authorization: str = Header(...)) -> UserWithKeys:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+    token = authorization.replace("Bearer ", "")
+
+    # Development mode - allow testing with a dummy token
+    if token == "dev-mode-token" or os.environ.get("FASTAPI_ENV") == "development":
+        logger.info("Using development mode authentication")
+        return UserWithKeys(
+            user_id="dev-user-id",
+            email="dev@example.com",
+            google_api_key=settings.DEFAULT_GOOGLE_API_KEY,
+            alpha_vantage_key=settings.DEFAULT_ALPHA_VANTAGE_KEY
+        )
+
     try:
         resp = supabase_client.auth.get_user(token)
         if resp.user is None:
             raise HTTPException(status_code=401, detail="User not found")
-        
-        # Get user API keys from profiles table
-        profile = supabase_client.table("profiles").select("google_api_key,alpha_vantage_key").eq("id", resp.user.id).single().execute()
-        
-        # Extract API keys or use defaults
-        google_api_key = profile.data.get("google_api_key") if profile.data else ""
-        alpha_vantage_key = profile.data.get("alpha_vantage_key") if profile.data else ""
-        
-        # If API keys are missing, check user metadata
-        if not google_api_key and resp.user.user_metadata:
-            google_api_key = resp.user.user_metadata.get("google_api_key", "")
-        if not alpha_vantage_key and resp.user.user_metadata:
-            alpha_vantage_key = resp.user.user_metadata.get("alpha_vantage_key", "")
-        
-        # Create enhanced user object with API keys
+        profile = (
+                      supabase_client
+                      .table("profiles")
+                      .select("google_api_key,alpha_vantage_key")
+                      .eq("id", resp.user.id)
+                      .single()
+                      .execute()
+                  ).data or {}
+
+        google_api_key = profile.get("google_api_key") or resp.user.user_metadata.get("google_api_key", "")
+        alpha_vantage_key = profile.get("alpha_vantage_key") or resp.user.user_metadata.get("alpha_vantage_key", "")
+
         return UserWithKeys(
             user_id=resp.user.id,
             email=resp.user.email,
@@ -131,6 +164,7 @@ async def get_current_user(authorization: str = Header(...)):
         logger.error(f"Auth error: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
 
+
 # ---------------------------
 # Chat history helper
 # ---------------------------
@@ -140,15 +174,15 @@ async def get_chat_history(conversation_id: Optional[str]) -> ChatMessageHistory
         return history
     try:
         rows = (
-            supabase_client
-            .table("chat_messages")
-            .select("user_message,ai_response")
-            .eq("conversation_id", conversation_id)
-            .order("created_at", desc=False)
-            .limit(50)
-            .execute()
-            .data
-        )
+                   supabase_client
+                   .table("chat_messages")
+                   .select("user_message,ai_response")
+                   .eq("conversation_id", conversation_id)
+                   .order("created_at", desc=False)
+                   .limit(50)
+                   .execute()
+                   .data
+               ) or []
         for row in rows:
             history.add_user_message(row["user_message"])
             history.add_ai_message(row["ai_response"])
@@ -156,81 +190,59 @@ async def get_chat_history(conversation_id: Optional[str]) -> ChatMessageHistory
         logger.warning(f"Failed to fetch chat history: {e}")
     return history
 
+
 # ---------------------------
-# Tool implementations
+# Tools
 # ---------------------------
-def search_financial_news(query: str) -> Union[str, List[Dict[str, Any]]]:
-    if not settings.DEFAULT_ALPHA_VANTAGE_KEY:
+def search_financial_news(query: str, api_key: Optional[str] = None) -> Union[str, List[Dict[str, Any]]]:
+    key = api_key or settings.DEFAULT_ALPHA_VANTAGE_KEY
+    if not key:
         return "News API key not configured."
-    
-    api_key = settings.DEFAULT_ALPHA_VANTAGE_KEY
-    
+    host = settings.ALPHA_VANTAGE_HOST
     if query.isupper() and query.isalpha() and len(query) <= 5:
-        url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={query}&apikey={api_key}"
+        url = f"https://{host}/query?function=NEWS_SENTIMENT&tickers={query}&apikey={key}"
     else:
-        url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&apikey={api_key}"
-    
+        url = f"https://{host}/query?function=NEWS_SENTIMENT&apikey={key}"
     try:
         res = requests.get(url)
         res.raise_for_status()
         data = res.json()
-        
-        if not data or 'feed' not in data:
+        feed = data.get("feed", [])
+        if not feed:
             return f"No articles found for '{query}'."
-            
-        arts = data['feed'][:5]
-        return [{
-            "title": a.get("title"),
-            "url": a.get("url"),
-            "source": a.get("source"),
-            "published_at": a.get("time_published")
-        } for a in arts] or f"No articles found for '{query}'."
-    except Exception as e:
-        logger.error(f"News fetch error for '{query}': {e}")
-        return f"Error fetching news: {e}"    if not settings.DEFAULT_ALPHA_VANTAGE_KEY:
-        return "News API key not configured."
-    
-    api_key = settings.DEFAULT_ALPHA_VANTAGE_KEY
-    
-    if query.isupper() and query.isalpha() and len(query) <= 5:
-        url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={query}&apikey={api_key}"
-    else:
-        url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&apikey={api_key}"
-    
-    try:
-        res = requests.get(url)
-        res.raise_for_status()
-        data = res.json()
-        
-        if not data or 'feed' not in data:
-            return f"No articles found for '{query}'."
-            
-        arts = data['feed'][:5]
-        return [{
-            "title": a.get("title"),
-            "url": a.get("url"),
-            "source": a.get("source"),
-            "published_at": a.get("time_published")
-        } for a in arts] or f"No articles found for '{query}'."
+        return [
+            {
+                "title": a.get("title"),
+                "url": a.get("url"),
+                "source": a.get("source"),
+                "published_at": a.get("time_published")
+            }
+            for a in feed[:5]
+        ]
     except Exception as e:
         logger.error(f"News fetch error for '{query}': {e}")
         return f"Error fetching news: {e}"
+
 
 def get_stock_price(symbol: str) -> str:
     try:
         ticker = yf.Ticker(symbol)
         hist = ticker.history(period="1d")
-        price = (hist["Close"].iloc[-1] if not hist.empty
-                 else ticker.info.get("currentPrice") or ticker.info.get("regularMarketPrice"))
+        price = (
+            hist["Close"].iloc[-1]
+            if not hist.empty
+            else ticker.info.get("currentPrice") or ticker.info.get("regularMarketPrice")
+        )
         return f"{symbol}: ${price:.2f}" if price else f"Price not available for {symbol}."
     except Exception as e:
         logger.error(f"Price fetch error for '{symbol}': {e}")
         return f"Error fetching price for {symbol}."
 
+
 def analyze_portfolio(user_id: str) -> str:
-    rows = supabase_client.table("portfolio")\
-        .select("symbol,quantity,purchase_date")\
-        .eq("user_id", user_id).execute().data
+    rows = supabase_client.table("portfolio") \
+               .select("symbol,quantity,purchase_date") \
+               .eq("user_id", user_id).execute().data or []
     if not rows:
         return "You have no holdings in your portfolio."
     total_val = 0.0
@@ -241,55 +253,49 @@ def analyze_portfolio(user_id: str) -> str:
         val = price * qty
         total_val += val
         details.append((sym, qty, price, val))
-    lines = [f"{sym}: {qty} shares @ ${price:.2f} = ${val:.2f}"
-             for sym, qty, price, val in details]
-    alloc = [f"{sym}: {val/total_val:.1%}" for sym, _, _, val in details]
+    lines = [f"{sym}: {qty} shares @ ${price:.2f} = ${val:.2f}" for sym, qty, price, val in details]
+    alloc = [f"{sym}: {val / total_val:.1%}" for sym, _, _, val in details]
     return (
-        f"Total Portfolio Value: ${total_val:.2f}\n\n"
-        "Holdings:\n" + "\n".join(lines) + "\n\n"
-        "Allocation:\n" + "\n".join(alloc)
+            f"Total Portfolio Value: ${total_val:.2f}\n\n"
+            "Holdings:\n" + "\n".join(lines) + "\n\n"
+                                               "Allocation:\n" + "\n".join(alloc)
     )
 
+
 def create_financial_plan(user_id: str, user_llm=None) -> str:
-    profile = supabase_client.table("user_profiles")\
-        .select("age,goals,risk_tolerance")\
+    profile = supabase_client.table("user_profiles") \
+        .select("age,goals,risk_tolerance") \
         .eq("user_id", user_id).single().execute().data
     if not profile:
         return "Please set up your profile (age, goals, risk tolerance) first."
-    
     prompt = (
         f"Create a personalized financial plan for a client aged {profile['age']}, "
         f"goals: '{profile['goals']}', risk tolerance: '{profile['risk_tolerance']}'. "
         "Provide actionable steps and a timeline."
     )
-    
     try:
-        # Get user's API key if we don't have a user_llm
         if not user_llm:
-            user_data = supabase_client.table("profiles")\
-                .select("google_api_key")\
-                .eq("id", user_id).single().execute().data
-            
-            if not user_data or not user_data.get("google_api_key"):
+            user_data = supabase_client.table("profiles") \
+                            .select("google_api_key") \
+                            .eq("id", user_id).single().execute().data or {}
+            api_key = user_data.get("google_api_key")
+            if not api_key:
                 return "Google API key is required to generate a financial plan. Please update your profile."
-            
-            # Create a temporary LLM with the user's API key
             user_llm = ChatGoogleGenerativeAI(
                 model=settings.GEMINI_MODEL,
-                google_api_key=user_data.get("google_api_key"),
+                google_api_key=api_key,
                 temperature=0.2
             )
-        
-        # Use the user's LLM to generate the plan
         return user_llm.predict(prompt)
     except Exception as e:
         logger.error(f"Financial plan error: {e}")
         return f"Error generating financial plan: {e}"
 
+
 def assess_risk(user_id: str) -> str:
-    rows = supabase_client.table("portfolio")\
-        .select("symbol,quantity")\
-        .eq("user_id", user_id).execute().data
+    rows = supabase_client.table("portfolio") \
+               .select("symbol,quantity") \
+               .eq("user_id", user_id).execute().data or []
     if not rows:
         return "No portfolio data to assess risk."
     frames = []
@@ -302,10 +308,11 @@ def assess_risk(user_id: str) -> str:
     level = "low" if vol < 0.10 else "medium" if vol < 0.20 else "high"
     return f"Annualized volatility: {vol:.2%}. Risk profile: {level}."
 
+
 def generate_performance_chart(user_id: str) -> str:
-    rows = supabase_client.table("portfolio")\
-        .select("symbol,quantity")\
-        .eq("user_id", user_id).execute().data
+    rows = supabase_client.table("portfolio") \
+               .select("symbol,quantity") \
+               .eq("user_id", user_id).execute().data or []
     if not rows:
         return "No portfolio data to chart."
     frames = []
@@ -328,44 +335,210 @@ def generate_performance_chart(user_id: str) -> str:
 
     return f"{settings.BACKEND_URL}/static/{os.path.basename(filename)}"
 
-# ---------------------------
-# Agent setup helpers
-# ---------------------------
+
 def make_tool(name: str, func, desc: str) -> Tool:
     return Tool(name=name, func=func, description=desc)
 
+
 def build_agents() -> Dict[str, AgentExecutor]:
     tools = {
-        "NewsSearch":       make_tool("NewsSearch", search_financial_news, "Fetch financial news"),
-        "PriceCheck":       make_tool("PriceCheck", get_stock_price, "Get stock price"),
+        "NewsSearch": make_tool("NewsSearch", search_financial_news, "Fetch financial news"),
+        "PriceCheck": make_tool("PriceCheck", get_stock_price, "Get stock price"),
         "AnalyzePortfolio": make_tool("AnalyzePortfolio", analyze_portfolio, "Analyze your portfolio"),
-        "CreatePlan":       make_tool("CreatePlan", create_financial_plan, "Generate a financial plan"),
-        "RiskAssessment":   make_tool("RiskAssessment", assess_risk, "Assess portfolio risk"),
+        "CreatePlan": make_tool("CreatePlan", create_financial_plan, "Generate a financial plan"),
+        "RiskAssessment": make_tool("RiskAssessment", assess_risk, "Assess portfolio risk"),
         "PerformanceChart": make_tool("PerformanceChart", generate_performance_chart, "Generate performance chart"),
     }
-
     prompts = {
-        "Market":    "You are a Market Analyst. Use NewsSearch and PriceCheck.",
+        "Market": "You are a Market Analyst. Use NewsSearch and PriceCheck.",
         "Portfolio": "You are a Portfolio Manager. Use AnalyzePortfolio, RiskAssessment, PerformanceChart.",
-        "Planner":   "You are a Financial Planner. Use CreatePlan.",
-        "General":   "You are a General Finance Advisor. You may use any tool."
+        "Planner": "You are a Financial Planner. Use CreatePlan.",
+        "General": "You are a General Finance Advisor. You may use any tool."
     }
-
     dests = {
-        "Market":    ["NewsSearch", "PriceCheck"],
+        "Market": ["NewsSearch", "PriceCheck"],
         "Portfolio": ["AnalyzePortfolio", "RiskAssessment", "PerformanceChart"],
-        "Planner":   ["CreatePlan"],
-        "General":   list(tools.keys()),
+        "Planner": ["CreatePlan"],
+        "General": list(tools.keys()),
     }
-
     chains: Dict[str, AgentExecutor] = {}
     for name, keys in dests.items():
         selected = [tools[k] for k in keys]
         memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-        prompt_template_str = (
+        prompt_str = (
             f"{prompts[name]}\n\n"
             "You have access to the following tools:\n{tools}\n\n"
-            "To use a tool, please use the following format:\n"
+            "To use a tool:\n"
+            "```\n"
+            "Thought: Do I need to use a tool? Yes\n"
+            "Action: one of [{tool_names}]\n"
+            "Action Input: <input>\n"
+            "Observation: <result>\n"
+            "```\n"
+            "Or if no tool needed:\n"
+            "```\n"
+            "Thought: Do I need to use a tool? No\n"
+            "Final Answer: <your answer>\n"
+            "```\n\n"
+            "History:\n{chat_history}\n"
+            "Human: {input}\n"
+            "Thought:{agent_scratchpad}"
+        )
+        prompt = PromptTemplate.from_template(prompt_str)
+        agent = create_react_agent(llm=llm, tools=selected, prompt=prompt)
+        chains[name] = AgentExecutor(agent=agent, tools=selected, memory=memory, verbose=True)
+    return chains
+
+
+@app.on_event("startup")
+async def on_startup():
+    global supabase_client, llm, router_chain, agent_destinations
+    logger.info(
+        f"Supabase URL set? {'✔' if settings.SUPABASE_URL else '❌'}; "
+        f"Key set? {'✔' if settings.SUPABASE_KEY else '❌'}"
+    )
+    if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
+
+    # Initialize Supabase client
+    supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+
+    # Now that supabase_client is initialized, we can import and setup conversation_routes
+    import conversation_routes
+    conversation_routes.initialize(supabase_client, get_current_user, UserWithKeys)
+    app.include_router(conversation_routes.router)
+
+    # Initialize the LLM
+    logger.info("Initializing LLM with Google API key...")
+    if not settings.DEFAULT_GOOGLE_API_KEY:
+        logger.warning("No default Google API key found in environment variables!")
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model=settings.GEMINI_MODEL,
+            google_api_key=settings.DEFAULT_GOOGLE_API_KEY,
+            temperature=0.2,
+            convert_system_message_to_human=True
+        )
+        logger.info(f"Successfully initialized {settings.GEMINI_MODEL} LLM")
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM: {e}")
+        raise
+
+    # Initialize router chain and agent destinations
+    logger.info("Building router chain and agent destinations...")
+    try:
+        # Get the agent routing map
+        agent_mapping = get_agent_routing_map()
+        destinations_str = "\n".join([f"{k}: {v}" for k, v in agent_mapping.items()])
+
+        # Create the router chain for directing messages to appropriate agents
+        router_template = MULTI_PROMPT_ROUTER_TEMPLATE.format(destinations=destinations_str)
+        router_prompt = PromptTemplate(
+            template=router_template,
+            input_variables=["input", "market_data", "news_data"]
+        )
+        # ← Attach the required output parser
+        router_prompt.output_parser = RouterOutputParser()
+
+        # Create the LLM chain with the prompt
+        llm_chain = LLMChain(llm=llm, prompt=router_prompt)
+
+        # Create the router chain with the LLM chain
+        router_chain = LLMRouterChain(
+            llm_chain=llm_chain,
+            destination_key="destination",
+            next_inputs_key="next_inputs"
+        )
+
+        # Build the agent executors
+        agent_destinations = build_agents()
+        logger.info(f"Initialized {len(agent_destinations)} agent destinations")
+    except Exception as e:
+        logger.error(f"Failed to initialize router chain or agents: {e}")
+        raise
+
+    # Initialize other components
+    os.makedirs("static", exist_ok=True)
+    logger.info("FastAPI server started successfully")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+@app.get("/dev/health")
+async def dev_health():
+    """Development mode health check that doesn't require authentication"""
+    return {
+        "status": "ok",
+        "mode": "development",
+        "gemini_api_key_configured": bool(settings.DEFAULT_GOOGLE_API_KEY),
+        "alpha_vantage_key_configured": bool(settings.DEFAULT_ALPHA_VANTAGE_KEY),
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+def create_user_llm(google_api_key: str):
+    if not google_api_key:
+        raise ValueError("Google API key is required")
+    return ChatGoogleGenerativeAI(
+        model=settings.GEMINI_MODEL,
+        google_api_key=google_api_key,
+        temperature=0.2,
+        convert_system_message_to_human=True
+    )
+
+
+def build_user_agents(user):
+    """Build agent executors for a specific user with their API keys"""
+    user_llm = create_user_llm(user.google_api_key)
+
+    # Define the tools with user context
+    tools = [
+        make_tool("NewsSearch", lambda q: search_financial_news(q, user.alpha_vantage_key),
+                  "Search for recent financial news and market updates"),
+        make_tool("PriceCheck", get_stock_price,
+                  "Get the current price of a stock by ticker symbol"),
+        make_tool("AnalyzePortfolio", lambda: analyze_portfolio(user.id),
+                  "Analyze the user's investment portfolio for performance and allocation"),
+        make_tool("CreatePlan", lambda: create_financial_plan(user.id, user_llm),
+                  "Create a personalized financial plan based on the user's goals"),
+        make_tool("RiskAssessment", lambda: assess_risk(user.id),
+                  "Assess investment risk level of the user's portfolio"),
+        make_tool("PerformanceChart", lambda: generate_performance_chart(user.id),
+                  "Generate a visual chart showing portfolio performance over time")
+    ]
+
+    # Get routing information from agent definitions
+    destinations_map = get_agent_routing_map()
+    destinations_str = "\n".join(f"{k}: {v}" for k, v in destinations_map.items())
+
+    # Create the router chain for directing messages to appropriate agents
+    router_template = MULTI_PROMPT_ROUTER_TEMPLATE.format(destinations=destinations_str)
+    router_prompt = PromptTemplate(
+        template=router_template,
+        input_variables=["input", "market_data", "news_data"]
+    )
+    # ← Attach the required output parser
+    router_prompt.output_parser = RouterOutputParser()
+
+    llm_chain = LLMChain(llm=user_llm, prompt=router_prompt)
+    router_chain = LLMRouterChain(
+        llm_chain=llm_chain,
+        destination_key="destination",
+        next_inputs_key="next_inputs"
+    )
+
+    # Instantiate each destination agent
+    destinations = {}
+    for agent_name in destinations_map.keys():
+        agent_def = get_agent_definition(agent_name)
+        agent_tools = [tool for tool in tools if tool.name in agent_def.tools]
+        prompt = PromptTemplate.from_template(
+            f"{agent_def.instructions}\n\n"
+            "You have access to the following tools:\n{tools}\n\n"
+            "To use a tool, use the following format:\n"
             "```\n"
             "Thought: Do I need to use a tool? Yes\n"
             "Action: the action to take, should be one of [{tool_names}]\n"
@@ -377,240 +550,175 @@ def build_agents() -> Dict[str, AgentExecutor]:
             "Thought: Do I need to use a tool? No\n"
             "Final Answer: [your response here]\n"
             "```\n\n"
-            "History:\n{chat_history}\n"
+            "Begin!\n"
+            "{chat_history}\n"
             "Human: {input}\n"
-            "Thought:{agent_scratchpad}"
+            "AI: "
         )
-        prompt = PromptTemplate.from_template(prompt_template_str)
-        agent = create_react_agent(llm=llm, tools=selected, prompt=prompt)
-        chains[name] = AgentExecutor(agent=agent, tools=selected, memory=memory, verbose=True)
-    return chains
+        agent = create_react_agent(user_llm, agent_tools, prompt)
+        destinations[agent_name] = AgentExecutor(
+            agent=agent,
+            tools=agent_tools,
+            memory=ConversationBufferMemory(memory_key="chat_history", return_messages=True),
+            verbose=True
+        )
 
-# ---------------------------
-# Startup event
-# ---------------------------
-@app.on_event("startup")
-async def on_startup():
-    global supabase_client
-
-    # verify env
-    logger.info(f"Attempting to load Supabase credentials. SUPABASE_URL: {'set' if settings.SUPABASE_URL else 'NOT SET'}, SUPABASE_KEY: {'set' if settings.SUPABASE_KEY else 'NOT SET'}")
-    if not settings.SUPABASE_URL:
-        logger.error("CRITICAL: SUPABASE_URL is not set in environment variables. Please check your .env file.")
-        raise RuntimeError("SUPABASE_URL not set. Server cannot start.")
-    if not settings.SUPABASE_KEY:
-        logger.error("CRITICAL: SUPABASE_KEY is not set in environment variables. Please check your .env file.")
-        raise RuntimeError("SUPABASE_KEY not set. Server cannot start.")
-
-    # Initialize Supabase client
-    supabase_client = supabase.create_client(
-        settings.SUPABASE_URL, settings.SUPABASE_KEY
-    )
-    
-    # Create static directory for chart images if it doesn't exist
-    os.makedirs("static", exist_ok=True)
-    
-    logger.info("FastAPI server started successfully")
-    logger.info("User-specific API keys will be used for AI and data services")
-
-# ---------------------------
-# Health check
-# ---------------------------
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-
-# ---------------------------
-# Helper to create LLM with user's API key
-# ---------------------------
-def create_user_llm(google_api_key: str):
-    if not google_api_key:
-        raise ValueError("Google API key is required to use the AI advisor")
-    
-    return ChatGoogleGenerativeAI(
-        model=settings.GEMINI_MODEL,
-        google_api_key=google_api_key,
-        temperature=0.2,
-        convert_system_message_to_human=True,
-        safety_settings=[
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        ]
-    )
-
-# ---------------------------
-# Create user-specific agents
-# ---------------------------
-def build_user_agents(user):
-    # Create user-specific LLM with their API key
-    user_llm = create_user_llm(user.google_api_key)
-    
-    # Create tools with user context
-    tools = [
-        make_tool(
-            "search_financial_news",
-            lambda query: search_financial_news(query, user.alpha_vantage_key),
-            "Search for recent financial news articles. Useful for market updates and company news."
-        ),
-        make_tool(
-            "get_stock_price",
-            get_stock_price,
-            "Get the current price of a stock. Input should be a valid ticker symbol (e.g., AAPL, MSFT)."
-        ),
-        make_tool(
-            "analyze_portfolio",
-            lambda: analyze_portfolio(user.id),
-            "Analyze the user's investment portfolio for performance, allocation, and risk."
-        ),
-        make_tool(
-            "create_financial_plan",
-            lambda: create_financial_plan(user.id, user_llm),
-            "Create a personalized financial plan based on the user's goals and risk tolerance."
-        ),
-        make_tool(
-            "assess_risk",
-            lambda: assess_risk(user.id),
-            "Assess the risk level of the user's current investments and financial situation."
-        ),
-        make_tool(
-            "generate_performance_chart",
-            lambda: generate_performance_chart(user.id),
-            "Generate a visual chart showing portfolio performance over time."
-        ),
-    ]
-    
-    # Create agent destinations with user's LLM
-    destinations = {}
-    
-    # Financial Advisor Agent
-    advisor_prompt = PromptTemplate.from_template(
-        """You are an expert financial advisor. Answer questions about investments, 
-        financial planning, and market trends. Use tools when appropriate.
-        
-        {chat_history}
-        Human: {input}
-        AI: """
-    )
-    advisor_agent = create_react_agent(user_llm, tools, advisor_prompt)
-    destinations["financial_advisor"] = AgentExecutor(agent=advisor_agent, tools=tools)
-    
-    # Portfolio Manager Agent
-    portfolio_prompt = PromptTemplate.from_template(
-        """You are a portfolio management expert. Help analyze and optimize investment 
-        portfolios, asset allocation, and risk management. Use tools when appropriate.
-        
-        {chat_history}
-        Human: {input}
-        AI: """
-    )
-    portfolio_agent = create_react_agent(user_llm, tools, portfolio_prompt)
-    destinations["portfolio_manager"] = AgentExecutor(agent=portfolio_agent, tools=tools)
-    
-    # Market Analyst Agent
-    market_prompt = PromptTemplate.from_template(
-        """You are a market analysis expert. Provide insights on market trends, 
-        economic indicators, and stock performance. Use tools when appropriate.
-        
-        {chat_history}
-        Human: {input}
-        AI: """
-    )
-    market_agent = create_react_agent(user_llm, tools, market_prompt)
-    destinations["market_analyst"] = AgentExecutor(agent=market_agent, tools=tools)
-    
-    # Create router chain with user's LLM
-    destinations_str = "\n".join([f"{k}: {v}" for k, v in {
-        "financial_advisor": "Questions about financial advice, planning, budgeting, saving, debt management, retirement planning, or general financial guidance.",
-        "portfolio_manager": "Questions about portfolio analysis, asset allocation, diversification, rebalancing, or specific investment holdings.",
-        "market_analyst": "Questions about market trends, economic news, stock performance, sector analysis, or market forecasts."
-    }.items()])
-    
-    router_template = MULTI_PROMPT_ROUTER_TEMPLATE.format(destinations=destinations_str)
-    router_prompt = PromptTemplate(template=router_template, input_variables=["input"])
-    router_chain = LLMRouterChain.from_llm(user_llm, router_prompt, RouterOutputParser())
-    
     return destinations, router_chain
 
-# ---------------------------
-# Modified search_financial_news to use user's API key
-# ---------------------------
-def search_financial_news(query: str, api_key: str = None) -> Union[str, List[Dict[str, Any]]]:
-    if not api_key:
-        return "News API key not configured. Please add your RapidAPI key in your profile settings."
-    
-    host = settings.NEWS_API_HOST
-    headers = {
-        "x-rapidapi-key": api_key,
-        "x-rapidapi-host": host,
-    }
-    
-    if query.isupper() and query.isalpha() and len(query) <= 5:
-        url = f"https://{host}/stock-news?symbol={query}&language=en"
-    else:
-        url = f"https://{host}/market-trends?trend_type=most_actives&country=us&language=en"
-    
-    try:
-        res = requests.get(url, headers=headers)
-        res.raise_for_status()
-        arts = res.json().get("data", {}).get("news", [])[:5]
-        return [{
-            "title": a.get("article_title"),
-            "url": a.get("article_url"),
-            "source": a.get("source"),
-            "published_at": a.get("post_time_utc")
-        } for a in arts] or f"No articles found for '{query}'."
-    except Exception as e:
-        logger.error(f"News fetch error for '{query}': {e}")
-        return f"Error fetching news: {e}"
 
-# ---------------------------
-# Chat endpoint
-# ---------------------------
-@app.post("/chat", response_model=ChatOutput)
-async def chat_endpoint(
-    chat: ChatInput,
-    user=Depends(get_current_user),
-    conversation_id: Optional[str] = None
+@app.post("/dev/chat", response_model=ChatOutput)
+async def dev_chat_endpoint(
+        chat: ChatInput,
+        conversation_id: Optional[str] = None
 ):
+    logger.info(f"Received DEV chat message: '{chat.message}'")
+    logger.debug(f"DEV chat endpoint received: {chat}")
     try:
-        # Validate API keys
-        if not user.google_api_key:
-            raise HTTPException(
-                status_code=400, 
-                detail="Google API key is required. Please update your profile with a valid API key."
-            )
-        
-        if not user.alpha_vantage_key:
-            raise HTTPException(
-                status_code=400, 
-                detail="RapidAPI key is required. Please update your profile with a valid API key."
-            )
-        
-        # Create a new conversation ID if not provided
+        dev_user = UserWithKeys(
+            user_id="dev-user-id",
+            email="dev@example.com",
+            google_api_key=settings.DEFAULT_GOOGLE_API_KEY,
+            alpha_vantage_key=settings.DEFAULT_ALPHA_VANTAGE_KEY
+        )
+
+        new_conversation = False
         if not conversation_id:
             conversation_id = str(uuid.uuid4())
-        
-        # Get chat history
+            new_conversation = True
+
         history = await get_chat_history(conversation_id)
-        
-        # Build user-specific agents with their API keys
-        user_agents, user_router = build_user_agents(user)
-        
-        # Route to the appropriate agent
-        route_result = user_router.invoke({"input": chat.message})
-        agent_name = route_result["destination"]
-        agent = user_agents.get(agent_name)
-        
+        user_agents, user_router = build_user_agents(dev_user)
+
+        logger.info("Routing chat message to appropriate agent")
+        route = user_router.invoke({"input": chat.message})
+        agent_name = route["destination"]
+        logger.info(f"Selected agent: {agent_name}")
+        agent = user_agents.get(agent_name) or user_agents.get("general")
         if not agent:
-            raise HTTPException(status_code=400, detail=f"Unknown agent: {agent_name}")
-        
-        # Invoke the agent with memory
-        agent_response = agent.invoke({"input": chat.message, "chat_history": history.messages})
-        response_text = agent_response["output"]
-        
-        # Save the conversation
+            raise HTTPException(400, detail="No suitable agent available")
+
+        try:
+            logger.info(f"Invoking agent {agent_name} with message: '{chat.message}'")
+            # Include market and news data from context
+            result = agent.invoke({
+                "input": chat.message,
+                "chat_history": history.messages,
+                "market_data": chat.context.get("market_data") if chat.context else None,
+                "news_data": chat.context.get("news_data") if chat.context else None
+            })
+            logger.info("Agent executed successfully")
+            response_text = result["output"]
+            logger.info(f"Agent response: '{response_text[:100]}...' (truncated)")
+        except Exception as e:
+            logger.error(f"Error invoking agent: {e}")
+            raise
+
+        conversation_title = "Development Conversation"
+        if new_conversation:
+            conversation_title = generate_conversation_title(chat.message)
+
+        agent_def = get_agent_definition(agent_name)
+        return ChatOutput(
+            message=response_text,
+            agent_name=agent_name,
+            agent_display_name=agent_def.display_name,
+            agent_icon=agent_def.icon,
+            agent_color=agent_def.color,
+            conversation_id=conversation_id,
+            conversation_title=conversation_title,
+            created_at=datetime.now().isoformat()
+        )
+    except Exception as e:
+        logger.error(f"Dev chat error: {e}")
+        error_agent = get_agent_definition("error")
+        return ChatOutput(
+            message=f"I encountered an error: {e}. Please try again or rephrase your question.",
+            agent_name="error",
+            agent_display_name=error_agent.display_name,
+            agent_icon=error_agent.icon,
+            agent_color=error_agent.color,
+            conversation_id=conversation_id or str(uuid.uuid4()),
+            conversation_title="Error Session",
+            created_at=datetime.now().isoformat()
+        )
+
+
+@app.post("/chat", response_model=ChatOutput)
+async def chat_endpoint(
+        chat: ChatInput,
+        user=Depends(get_current_user),
+        conversation_id: Optional[str] = None
+):
+    logger.info(f"Received chat message: '{chat.message}' from user: {user.id}")
+    try:
+        if not user.google_api_key:
+            raise HTTPException(400, detail="Google API key missing in your profile.")
+        if not user.alpha_vantage_key:
+            raise HTTPException(400, detail="Alpha Vantage API key missing in your profile.")
+
+        new_conversation = False
+        if not conversation_id:
+            conversation_id = str(uuid.uuid4())
+            new_conversation = True
+
+        history = await get_chat_history(conversation_id)
+        user_agents, user_router = build_user_agents(user)
+
+        logger.info("Routing message to appropriate agent")
+        route = user_router.invoke({"input": chat.message})
+        agent_name = route["destination"]
+        agent = user_agents.get(agent_name)
+        if not agent:
+            logger.warning(f"Agent {agent_name} not found, falling back to general")
+            agent_name = "general"
+            agent = user_agents.get(agent_name)
+            if not agent:
+                raise HTTPException(400, detail="No suitable agent available")
+
+        try:
+            logger.info(f"Invoking agent {agent_name} with message: '{chat.message}'")
+            # Include market and news data from context
+            result = agent.invoke({
+                "input": chat.message,
+                "chat_history": history.messages,
+                "market_data": chat.context.get("market_data") if chat.context else None,
+                "news_data": chat.context.get("news_data") if chat.context else None
+            })
+            logger.info("Agent executed successfully")
+            response_text = result["output"]
+            logger.info(f"Agent response: '{response_text[:100]}...' (truncated)")
+        except Exception as e:
+            logger.error(f"Error invoking agent: {e}")
+            raise
+
+        conversation_title = None
+        if new_conversation:
+            conversation_title = generate_conversation_title(chat.message)
+            try:
+                supabase_client.table("conversations").insert({
+                    "id": conversation_id,
+                    "user_id": user.id,
+                    "title": conversation_title,
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }).execute()
+            except Exception as e:
+                logger.error(f"Failed to save conversation: {e}")
+        else:
+            try:
+                res = supabase_client.table("conversations") \
+                    .select("title") \
+                    .eq("id", conversation_id) \
+                    .single() \
+                    .execute()
+                conversation_title = res.data.get("title") if res.data else "Conversation"
+                supabase_client.table("conversations") \
+                    .update({"updated_at": datetime.now().isoformat()}) \
+                    .eq("id", conversation_id).execute()
+            except Exception as e:
+                logger.error(f"Failed to retrieve conversation title: {e}")
+                conversation_title = "Conversation"
+
         try:
             supabase_client.table("chat_messages").insert({
                 "conversation_id": conversation_id,
@@ -622,13 +730,47 @@ async def chat_endpoint(
             }).execute()
         except Exception as e:
             logger.error(f"Failed to save chat message: {e}")
-        
+
+        agent_def = get_agent_definition(agent_name)
         return ChatOutput(
             message=response_text,
             agent_name=agent_name,
+            agent_display_name=agent_def.display_name,
+            agent_icon=agent_def.icon,
+            agent_color=agent_def.color,
             conversation_id=conversation_id,
+            conversation_title=conversation_title,
             created_at=datetime.now().isoformat()
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_agent = get_agent_definition("error")
+        return ChatOutput(
+            message=f"I encountered an error: {e}. Please try again or rephrase your question.",
+            agent_name="error",
+            agent_display_name=error_agent.display_name,
+            agent_icon=error_agent.icon,
+            agent_color=error_agent.color,
+            conversation_id=conversation_id or str(uuid.uuid4()),
+            conversation_title="Error Session",
+            created_at=datetime.now().isoformat()
+        )
+from fastapi import Depends
+
+@app.get("/conversations/{conversation_id}/history")
+async def get_conversation_history(
+    conversation_id: str,
+    user=Depends(get_current_user),
+):
+    rows = (
+        supabase_client
+        .table("chat_messages")
+        .select("id,user_message,ai_response,agent_name,agent_icon,agent_color,agent_display_name,created_at")
+        .eq("conversation_id", conversation_id)
+        .order("created_at", desc=False)
+        .execute()
+        .data
+    ) or []
+    return {"messages": rows}

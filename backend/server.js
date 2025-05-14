@@ -1,15 +1,26 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+
+// Get the directory name
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Import routes
 import authRoutes from './routes/auth.js';
 import portfolioRoutes from './routes/portfolio.js';
 import stocksRoutes from './routes/stocks.js';
 import newsRoutes from './routes/news.js';
-import userRoutes from './routes/user.js'; // Import user routes
+import userRoutes from './routes/user.js';
+import chatRoutes from './routes/chat.js';
+import conversationRoutes from './routes/conversations.js';
+
+// Import settings
+import { settings } from './config/settings.js';
 
 // Load environment variables
 dotenv.config();
@@ -36,6 +47,9 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Static files for charts and other assets
+app.use('/static', express.static(path.join(__dirname, 'static')));
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('A user connected');
@@ -59,11 +73,25 @@ app.use('/api/auth', authRoutes);
 app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/stocks', stocksRoutes);
 app.use('/api/news', newsRoutes);
-app.use('/api/user', userRoutes); // Add user routes
+app.use('/api/user', userRoutes);
 
-// Basic health check endpoint
+// New routes for multi-agent system
+app.use('/api/chat', chatRoutes);
+app.use('/api/conversations', conversationRoutes);
+
+// Health check endpoints
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+
+app.get('/dev/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    mode: 'development',
+    gemini_api_key_configured: Boolean(settings.DEFAULT_GOOGLE_API_KEY),
+    alpha_vantage_key_configured: Boolean(settings.DEFAULT_ALPHA_VANTAGE_KEY),
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Error handling middleware
@@ -75,7 +103,17 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Create static directory if it doesn't exist
+import fs from 'fs';
+const staticDir = path.join(__dirname, 'static');
+if (!fs.existsSync(staticDir)) {
+  fs.mkdirSync(staticDir, { recursive: true });
+  console.log('Created static directory for assets');
+}
+
 // Start server
 httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`API available at http://localhost:${PORT}`);
+  console.log(`Multi-agent system is ready to respond to queries`);
 });

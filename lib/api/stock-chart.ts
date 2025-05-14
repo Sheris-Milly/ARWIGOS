@@ -1,34 +1,65 @@
 import { fetchStockData } from "./stocks"
 
-/**
- * Fetches historical stock price data for the given symbol and period
- * @param symbol The stock symbol to fetch data for
- * @param period The time period for the chart data (1D, 5D, 1M, 3M, 6M, 1Y, 5Y)
- */
 export async function fetchStockChartData(symbol: string, period: string) {
   try {
-    // Map our periods to the API's expected format
-    const apiPeriod = period.replace(/(\d+)([A-Z])/, '$1$2').toUpperCase();
+    // Map our periods to the Alpha Vantage API's expected format
+    let alphaVantageFunction = 'TIME_SERIES_DAILY';
+    let outputsize = 'compact';
+    let interval = null;
     
-    // Real-Time Finance API endpoint for stock time series
-    const apiKey = process.env.NEXT_PUBLIC_RAPIDAPI_KEY;
+    // Convert our app's period format to Alpha Vantage parameters
+    switch(period) {
+      case '1D':
+        alphaVantageFunction = 'TIME_SERIES_INTRADAY';
+        interval = '5min';
+        break;
+      case '5D':
+        alphaVantageFunction = 'TIME_SERIES_INTRADAY';
+        interval = '30min';
+        outputsize = 'full';
+        break;
+      case '1M':
+        alphaVantageFunction = 'TIME_SERIES_DAILY';
+        outputsize = 'compact'; // Last 100 data points
+        break;
+      case '3M':
+      case '6M':
+        alphaVantageFunction = 'TIME_SERIES_DAILY';
+        outputsize = 'full'; // Full data
+        break;
+      case '1Y':
+        alphaVantageFunction = 'TIME_SERIES_DAILY';
+        outputsize = 'full';
+        break;
+      case '5Y':
+        alphaVantageFunction = 'TIME_SERIES_WEEKLY';
+        break;
+      default:
+        alphaVantageFunction = 'TIME_SERIES_DAILY';
+        outputsize = 'compact';
+    }
+    
+    // Alpha Vantage API endpoint for stock time series
+    const apiKey = process.env.NEXT_PUBLIC_ALPHA_VANTAGE_KEY || 'XBYMG2VY49SX4K21'; // Use the provided key for testing
     
     if (!apiKey) {
-      console.warn("RapidAPI key is missing - using simulated data");
+      console.warn("Alpha Vantage API key is missing - using simulated data");
       return simulateChartData(period);
     }
 
     try {
-      // Use the new Real-Time Finance API
-      const url = `https://real-time-finance-data.p.rapidapi.com/stock-time-series?symbol=${symbol}&period=${apiPeriod}&language=en`;
+      // Build the URL based on the function type
+      let url = `https://www.alphavantage.co/query?function=${alphaVantageFunction}&symbol=${symbol}&apikey=${apiKey}`;
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': apiKey,
-          'x-rapidapi-host': 'real-time-finance-data.p.rapidapi.com'
-        }
-      });
+      // Add interval parameter only for intraday data
+      if (interval) {
+        url += `&interval=${interval}`;
+      }
+      
+      // Add outputsize parameter
+      url += `&outputsize=${outputsize}`;
+      
+      const response = await fetch(url);
 
       if (!response.ok) {
         console.warn(`API request failed with status ${response.status}, using simulated data instead`);
@@ -37,19 +68,35 @@ export async function fetchStockChartData(symbol: string, period: string) {
 
       const data = await response.json();
       
-      if (!data || data.status !== "OK" || !data.data || !data.data.time_series) {
+      // Check for error messages from Alpha Vantage
+      if (data['Error Message'] || data['Information']) {
+        console.warn("Alpha Vantage API error or information message:", data['Error Message'] || data['Information']);
+        return simulateChartData(period);
+      }
+      
+      // Determine which time series key to use based on the function
+      let timeSeriesKey = '';
+      if (alphaVantageFunction === 'TIME_SERIES_INTRADAY') {
+        timeSeriesKey = `Time Series (${interval})`;
+      } else if (alphaVantageFunction === 'TIME_SERIES_DAILY') {
+        timeSeriesKey = 'Time Series (Daily)';
+      } else if (alphaVantageFunction === 'TIME_SERIES_WEEKLY') {
+        timeSeriesKey = 'Weekly Time Series';
+      }
+      
+      if (!data[timeSeriesKey]) {
         console.warn("No chart data available, using simulated data instead");
         return simulateChartData(period);
       }
 
       // Transform the time_series data to our expected format
-      const timeSeries = Object.entries(data.data.time_series).map(([timestamp, dataPoint]: [string, any]) => ({
+      const timeSeries = Object.entries(data[timeSeriesKey]).map(([timestamp, dataPoint]: [string, any]) => ({
         timestamp: new Date(timestamp).getTime(),
-        open: dataPoint.price - (dataPoint.change || 0),
-        high: dataPoint.price * 1.005, // Approximate high based on available data
-        low: dataPoint.price * 0.995,  // Approximate low based on available data
-        close: dataPoint.price,
-        volume: dataPoint.volume || 0
+        open: parseFloat(dataPoint['1. open']),
+        high: parseFloat(dataPoint['2. high']),
+        low: parseFloat(dataPoint['3. low']),
+        close: parseFloat(dataPoint['4. close']),
+        volume: parseInt(dataPoint['5. volume'], 10)
       })).sort((a, b) => a.timestamp - b.timestamp); // Sort by timestamp
       
       return timeSeries;

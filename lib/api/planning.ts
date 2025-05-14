@@ -42,13 +42,109 @@ export interface PlanningData {
   goals: Goal[];
 }
 
+// Check if in development mode
+const isDevMode = () => {
+  return typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || 
+     window.location.hostname === '127.0.0.1' ||
+     process.env.NODE_ENV === 'development');
+};
+
+// Helper function to generate mock planning data for development mode
+function getMockPlanningData(): PlanningData {
+  const today = new Date();
+  const futureDate = new Date();
+  futureDate.setFullYear(today.getFullYear() + 3);
+  
+  return {
+    retirementPlans: [
+      {
+        user_id: 'dev-user',
+        retirement_age: 65,
+        desired_income: 75000,
+        current_savings: 250000,
+        monthly_contribution: 1500,
+        investment_roi: 7,
+        created_at: today.toISOString(),
+        updated_at: today.toISOString()
+      }
+    ],
+    budgets: [
+      {
+        user_id: 'dev-user',
+        month: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`,
+        income: 8500,
+        expenses: {
+          'Housing': 2500,
+          'Transportation': 600,
+          'Food': 800,
+          'Utilities': 400,
+          'Entertainment': 300,
+          'Health': 200,
+          'Other': 500
+        },
+        savings_goal: 1500,
+        created_at: today.toISOString(),
+        updated_at: today.toISOString()
+      }
+    ],
+    goals: [
+      {
+        user_id: 'dev-user',
+        name: 'Emergency Fund',
+        target_amount: 25000,
+        current_amount: 15000,
+        target_date: futureDate.toISOString().split('T')[0],
+        priority: 'high',
+        created_at: today.toISOString(),
+        updated_at: today.toISOString()
+      },
+      {
+        user_id: 'dev-user',
+        name: 'Down Payment',
+        target_amount: 60000,
+        current_amount: 20000,
+        target_date: futureDate.toISOString().split('T')[0],
+        priority: 'medium',
+        created_at: today.toISOString(),
+        updated_at: today.toISOString()
+      }
+    ]
+  };
+}
+
 // Fetch all planning data for the user
 export async function getPlanningData(): Promise<PlanningData | null> {
   try {
+    // Development mode check - provide mock data if the server returns 500
+    if (isDevMode()) {
+      try {
+        const response = await fetch('/api/planning');
+        const text = await response.text();
+        
+        if (!response.ok) {
+          console.warn('API error in development mode, returning mock planning data');
+          return getMockPlanningData();
+        }
+        
+        if (!text) {
+          console.warn('Empty response in development mode, returning mock planning data');
+          return getMockPlanningData();
+        }
+        
+        const data: PlanningData = JSON.parse(text);
+        return data;
+      } catch (err) {
+        console.warn('Error in development mode, returning mock planning data:', err);
+        return getMockPlanningData();
+      }
+    }
+    
+    // Production mode - standard implementation
     const response = await fetch('/api/planning');
     const text = await response.text();
     if (!response.ok) {
-      let errorData = {};
+      let errorData: { error?: string } = {};
       try {
         errorData = text ? JSON.parse(text) : {};
       } catch (e) {
@@ -68,6 +164,8 @@ export async function getPlanningData(): Promise<PlanningData | null> {
       description: error instanceof Error ? error.message : 'Could not load planning details.',
       variant: 'destructive',
     });
+    
+    // Even in production, if toast is shown, return null instead of throwing
     return null;
   }
 }
@@ -128,5 +226,49 @@ export const saveRetirementPlan = (data: RetirementPlan) => savePlanningItem('re
 export const saveBudget = (data: Budget) => savePlanningItem('budget', data);
 export const saveGoal = (data: Goal) => savePlanningItem('goal', data);
 
-// TODO: Add functions for deleting planning items if needed
-// export async function deletePlanningItem(type: 'retirement' | 'budget' | 'goal', id: string): Promise<void> { ... }
+// Delete a planning item (retirement plan, budget, or goal)
+export async function deletePlanningItem(type: 'retirement' | 'budget' | 'goal', id: string): Promise<void> {
+  try {
+    const response = await fetch(`/api/planning?type=${type}&id=${id}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      let errorMsg = `HTTP error! status: ${response.status}`;
+      try {
+        // Try to get more specific error from response body
+        const errorResult = await response.json();
+        errorMsg = errorResult.error || errorMsg;
+      } catch (e) {
+        // If parsing JSON fails, try reading as text
+        try {
+          const errorText = await response.text();
+          if (errorText) {
+            errorMsg = errorText;
+          }
+        } catch (textError) {
+          // Ignore if reading text also fails
+        }
+      }
+      throw new Error(errorMsg);
+    }
+
+    toast({
+      title: 'Success',
+      description: `The ${type} has been deleted.`,
+    });
+  } catch (error) {
+    console.error(`Error deleting ${type}:`, error);
+    toast({
+      title: `Error Deleting ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+      description: error instanceof Error ? error.message : `Could not delete ${type}.`,
+      variant: 'destructive',
+    });
+    throw error;
+  }
+}
+
+// Specific delete functions
+export async function deleteGoal(id: string): Promise<void> {
+  return deletePlanningItem('goal', id);
+}

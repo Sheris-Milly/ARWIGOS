@@ -50,7 +50,7 @@ export function AppSidebar() {
         },
         {
           title: "AI Advisor",
-          href: "/advisor",
+          href: "/advisor-new",
           icon: Bot,
         },
       ],
