@@ -225,10 +225,9 @@ For the Express.js server:
      }
      ```
    - Import the backend directory as a separate project in Vercel
-   - Add the environment variables
 
-2. **Alternative: Deploy to Railway or Render**
-   - These platforms offer simple Node.js deployments with environment variables
+
+
 
 ### Database Management (Supabase)
 
@@ -253,22 +252,7 @@ Your Supabase project is already cloud-hosted. Remember to:
    - Go to Authentication → Providers
    - Configure email/password and other providers as needed
 
-## Troubleshooting
 
-### Common Issues
-
-1. **Authentication problems**:
-   - Check that your Supabase URL and keys are correct
-   - Ensure RLS policies are properly configured
-   - Check browser console for CORS errors
-
-2. **API data not loading**:
-   - Verify your RapidAPI key is valid and has sufficient quota
-   - Check network tab for API error responses
-
-3. **Deployment issues**:
-   - Ensure all environment variables are set in your deployment platform
-   - Check build logs for any compilation errors
 
 ## License
 
@@ -276,7 +260,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- Yahoo Finance API for market data
-- OpenAI for the language model
-- Supabase for database and authentication
-- Next.js and Vercel for the frontend framework and hosting
+-G.MIS
